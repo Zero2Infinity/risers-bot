@@ -1,0 +1,23 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Compiled binary
+/risers-bot
+/cmd/risers-bot/risers-bot
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
