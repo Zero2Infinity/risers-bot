@@ -23,8 +23,11 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"risers-bot/internal/db"
+	"risers-bot/internal/history"
 	"risers-bot/internal/llm"
 )
 
@@ -35,7 +38,7 @@ import (
 // internal/llm — because behavior is an orchestrator concern, not a transport
 // concern. See internal/llm/provider.go RoleSystem for the role value.
 // TODO(you): tighten wording once you observe misbehavior (e.g. hallucination).
-const SystemPrompt = `You are Risers bot for DCL team 88. Be concise. Use tools for DCL stats/players; answer directly otherwise.`
+const SystemPrompt = `You are Risers bot for DCL team 88 — a cricket bot and pandit of cricket stats. Be concise. Use tools for DCL game/player/stats; answer directly otherwise.`
 
 // MaxIterations guards against infinite tool loops: a model could keep calling
 // tools forever; this hard cap bounds one user turn to a bounded number of
@@ -52,14 +55,20 @@ type ToolExecutor func(ctx context.Context, call llm.ToolCall) (string, error)
 // a recording executor.
 type Loop struct {
 	store    *db.Store
+	history  *history.History
 	provider llm.Provider
 	executor ToolExecutor
 }
 
 // New wires a ReAct loop. executor resolves ToolCall.Name to a function; the
 // caller can use a single fn that switches on call.Name for the first slice.
-func New(store *db.Store, provider llm.Provider, executor ToolExecutor) *Loop {
-	return &Loop{store: store, provider: provider, executor: executor}
+func New(store *db.Store, history *history.History, provider llm.Provider, executor ToolExecutor) *Loop {
+	return &Loop{
+		store:    store,
+		history:  history,
+		provider: provider,
+		executor: executor,
+	}
 }
 
 // Run processes one user turn for a session and returns the final text to reply.
@@ -70,29 +79,78 @@ func New(store *db.Store, provider llm.Provider, executor ToolExecutor) *Loop {
 //	msgs := append([]llm.ChatMessage{{Role: llm.RoleSystem, Content: SystemPrompt}}, window...)
 //	msgs = append(msgs, llm.ChatMessage{Role: llm.RoleUser, Content: userText})
 //
-// The prepended SystemPrompt is the behavior contract for every Chat call.
-//
-// PSEUDOCODE:
-//
-//	msgs := history-context for session (the budgeted window)
-//	msgs = append(msgs, {role:"user", content:userText})
-//	store.SaveMessage(session, "user", userText, "", "")
-//
-//	for iter := 1; iter <= MaxIterations; iter++:
-//	  res, err := provider.Chat(ctx, msgs, tools)
-//	    -> persist assistant row with res.Thinking
-//	  if len(res.ToolCalls) == 0:
-//	    return res.Content                     // REASON produced the final answer
-//	  for each tool call in res.ToolCalls:     // ACT
-//	    obs, err := executor(ctx, call)        // e.g. fetchStats(call.Arguments)
-//	    toolMsg := {role:"tool", content:obs, toolCallID:call.ID, toolName:call.Name}
-//	    store.SaveMessage(session, "tool", obs, "", call.Name)
-//	    msgs = append(msgs, toolMsg)           // OBSERVE feeds the observation back
-//
-//	return <exhausted-message>  // MaxIterations reached without a final answer
-//
 // NOTE: res.Thinking (model private reasoning) is persisted but NEVER fed back
 // into msgs — matches the qwen message.thinking contract (see internal/llm).
 func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.Tool) (string, error) {
-	panic("unimplemented")
+
+	// guards
+	if l == nil || l.store == nil || l.history == nil {
+		return "", fmt.Errorf("agent: nil loop/history/store")
+	}
+	if l.provider == nil {
+		return "", fmt.Errorf("agent: nil provider")
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return "", fmt.Errorf("agent: session id empty")
+	}
+
+	if _, err := l.store.GetOrCreateSession(sessionID, "cli"); err != nil {
+		return "", fmt.Errorf("agent: get or create session: %w", err)
+	}
+
+	window, err := l.history.ContextFor(ctx, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("agent: history context: %w", err)
+	}
+	msgs := []llm.ChatMessage{{Role: llm.RoleSystem, Content: SystemPrompt}}
+	for _, m := range window {
+		msgs = append(msgs, llm.ChatMessage{
+			Role:     m.Role,
+			Content:  m.Content,
+			ToolName: m.ToolName,
+		})
+	}
+
+	msgs = append(msgs, llm.ChatMessage{Role: llm.RoleUser, Content: userText})
+	if err := l.store.SaveMessage(sessionID, "user", userText, "", ""); err != nil {
+		return "", fmt.Errorf("agent: unable to save message: %w", err)
+	}
+
+	// REACT loop
+	for iter := 1; iter <= MaxIterations; iter++ {
+		res, err := l.provider.Chat(ctx, msgs, tools)
+		if err != nil {
+			return "", fmt.Errorf("agent: provider chat iter %d: %w", iter, err)
+		}
+		if err := l.store.SaveMessage(sessionID, "assistant", res.Content, res.Thinking, ""); err != nil {
+			return "", fmt.Errorf("agent: save assistant iter %d: %w", iter, err)
+		}
+		// Thinking persisted but NEVER appended — matches qwen message.thinking contract.
+		// Append assistant turn (Content only) so next Chat sees tool_calls context.
+		msgs = append(msgs, llm.ChatMessage{Role: llm.RoleAssistant, Content: res.Content})
+		if len(res.ToolCalls) == 0 {
+			return res.Content, nil
+		}
+		if l.executor == nil {
+			return "", fmt.Errorf("agent: tool calls but no executor")
+		}
+		for _, tc := range res.ToolCalls {
+			obs, err := l.executor(ctx, tc)
+			if err != nil {
+				return "", fmt.Errorf("agent: tool %q: %w", tc.Name, err)
+			}
+			if err := l.store.SaveMessage(sessionID, "tool", obs, "", tc.Name); err != nil {
+				return "", fmt.Errorf("agent: save tool %q: %w", tc.Name, err)
+			}
+			msgs = append(msgs, llm.ChatMessage{
+				Role:       llm.RoleTool,
+				Content:    obs,
+				ToolCallID: tc.ID,
+				ToolName:   tc.Name,
+			})
+		}
+	}
+
+	return "", fmt.Errorf("agent: max iterations %d exceeded", MaxIterations)
 }
