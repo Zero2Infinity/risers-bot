@@ -16,6 +16,8 @@ package history
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"risers-bot/internal/db"
 )
@@ -34,17 +36,45 @@ type Compactor interface {
 // Summarize folds head (the older, out-of-window messages) into a summary and
 // PERSISTS it as a role='system' row on the session. It returns the persisted
 // summary Message so ContextFor can prepend it to the recent tail.
-//
-// PSEUDOCODE:
-//   existingSession := store.GetOrCreateSession(sessionID, "group")   // ensure row
-//   summaryText, err := compactor.Summarize(ctx, sessionID, head)
-//   if err → return zero Message, wrap(err)
-//   err = store.SaveMessage(sessionID, "system", summaryText, "", "")  // thinking/tool empty
-//   if err → return zero Message, wrap(err)
-//   // For simplicity the persisted summary is returned; a later refinement can
-//   // re-read it via ListMessages to grab its id/created_at.
-//   return db.Message{Role: "system", Content: summaryText, SessionID: sessionID}, nil
 func Summarize(ctx context.Context, store *db.Store, compactor Compactor, sessionID string, head []db.Message) (db.Message, error) {
-	// TODO(impl): orchestrates GetOrCreateSession + compactor.Summarize + SaveMessage.
-	panic("unimplemented")
+	if store == nil {
+		return db.Message{}, fmt.Errorf("summarize: nil store")
+	}
+
+	if compactor == nil {
+		return db.Message{}, fmt.Errorf("summarize: nil compactor")
+	}
+
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return db.Message{}, fmt.Errorf("summarize: session id empty")
+	}
+
+	if len(head) == 0 {
+		return db.Message{}, fmt.Errorf("summarize: empty head")
+	}
+
+	if _, err := store.GetOrCreateSession(sessionID, "cli"); err != nil {
+		return db.Message{}, fmt.Errorf("get or create session: %w", err)
+	}
+
+	text, err := compactor.Summarize(ctx, sessionID, head)
+	if err != nil {
+		return db.Message{}, fmt.Errorf("compactor summarize: %w", err)
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return db.Message{}, fmt.Errorf("compactor summarize: empty summary")
+	}
+
+	if err := store.SaveMessage(sessionID, "system", text, "", ""); err != nil {
+		return db.Message{}, fmt.Errorf("save system summary: %w", err)
+	}
+
+	return db.Message{
+		SessionID: sessionID,
+		Role:      "system",
+		Content:   text,
+	}, nil
+
 }

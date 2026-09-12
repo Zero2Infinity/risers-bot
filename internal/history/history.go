@@ -18,6 +18,8 @@ package history
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"risers-bot/internal/db"
 )
@@ -26,9 +28,9 @@ import (
 // persistence and a Compactor for summarization; it owns neither (both are
 // injected), so it is easy to test and to swap the summarizer.
 type History struct {
-	store     *db.Store
-	compactor Compactor // nil → windowing only, no summarization yet
-	keepRecent int      // number of trailing messages always forwarded verbatim
+	store      *db.Store
+	compactor  Compactor // nil → windowing only, no summarization yet
+	keepRecent int       // number of trailing messages always forwarded verbatim
 }
 
 // New wires a History over a store. compactor may be nil to start with plain
@@ -41,17 +43,29 @@ func New(store *db.Store, compactor Compactor, keepRecent int) *History {
 // This is the public entrypoint the loop calls (cmd/risers-bot or wa handler),
 // replacing a bare store.ListMessages(sessionID).
 //
-// PSEUDOCODE:
-//   full := store.ListMessages(sessionID)            // ordered, oldest→newest
-//   if len(full) <= keepRecent → return full          // under budget, no work
-//   tail := last keepRecent messages                  // verbatim recent
-//   head := full[:len(full)-keepRecent]               // older tail to compact
-//   summary := resummarize(sessionID, head)           // cached or newly produced
-//   return [summary] + tail
-//
 // The returned slice is the window to feed the model. It is NOT a replacement
 // for the stored history.
 func (h *History) ContextFor(ctx context.Context, sessionID string) ([]db.Message, error) {
-	// TODO(impl): slice window + invoke h.compactor.Summarize when out of budget.
-	panic("unimplemented")
+	if h == nil || h.store == nil {
+		return nil, fmt.Errorf("history: nil store")
+	}
+
+	sessionID = strings.TrimSpace(sessionID)
+	full, err := h.store.ListMessages(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list messages: %w", err)
+	}
+
+	tail, dropped := KeepRecent(full, h.keepRecent)
+	if !dropped || h.compactor == nil || h.keepRecent <= 0 {
+		return tail, nil // windowing-only, still under budget or no summarizer
+	}
+
+	head := full[:len(full)-len(tail)]
+	summary, err := Summarize(ctx, h.store, h.compactor, sessionID, head)
+	if err != nil {
+		return nil, fmt.Errorf("summarize head: %w", err)
+	}
+
+	return append([]db.Message{summary}, tail...), nil
 }
