@@ -34,16 +34,21 @@ import (
 // ── Agent behavior ─────────────────────────────────────────────────────────
 
 // SystemPrompt is the short persona injected as the first message on every turn.
-// Keep it 1-2 sentences (concise, tool-use discipline); it lives here — not in
+// Keep it short (tool-use discipline + answer contract); it lives here — not in
 // internal/llm — because behavior is an orchestrator concern, not a transport
 // concern. See internal/llm/provider.go RoleSystem for the role value.
-// TODO(you): tighten wording once you observe misbehavior (e.g. hallucination).
-const SystemPrompt = `You are Risers bot for DCL team 88 — a cricket bot and pandit of cricket stats. Be concise. Use tools for DCL game/player/stats; answer directly otherwise.`
+// Tightened 2026-09-19: model answered stats questions with frontend tutorials
+// instead of cricket answers, so the prompt now pins the audience (a fan, not
+// a developer) and bans code/tutorials unless asked.
+const SystemPrompt = `You are Risers bot, cricket pundit for DCL team 88 (Risers). You talk to a cricket fan, not a developer. Reply in English. Use tools for DCL games/players/stats. Answer ONLY the user's question from the tool results, concisely: a short list or 2-3 sentences. Never write code, tutorials, or app-building advice unless asked. If unsure, say you do not know. Do not hallucinate scores or players.`
 
 // MaxIterations guards against infinite tool loops: a model could keep calling
 // tools forever; this hard cap bounds one user turn to a bounded number of
-// Reason->Act->Observe rounds. Configurable later (like history maxTokens).
-const MaxIterations = 3
+// Reason->Act->Observe rounds. Raised 2026-09-19 from 3 to 10: chained tools
+// (search_players → get_player_stats, tournaments → schedule → scorecard)
+// need headroom; the loop still stops early once the model answers.
+// Configurable later (like history maxTokens).
+const MaxIterations = 10
 
 // ToolExecutor runs one tool by name and returns the observation string the
 // model should see next. Implementations are registered by the caller (e.g.

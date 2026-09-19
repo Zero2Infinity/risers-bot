@@ -1,8 +1,10 @@
 # AGENTS — risers-bot
 
-WhatsApp cricket bot for the **Risers** team (DCL team 88), in Go: per-session
-user↔LLM chat (with tool calls + reasoning) persisted to SQLite, delivered over
-whatsmeow, backed by a local Ollama qwen model.
+WhatsApp cricket pundit bot for the **Risers** team (DCL team 88), in Go:
+per-session user↔LLM chat (with tool calls + reasoning) persisted to SQLite,
+delivered over whatsmeow, backed by a local Ollama qwen model.
+
+Default team is Risers team 88 (`DCL_TEAM_ID=88`); other teams override via env.
 
 ## 1. Agent role
 
@@ -47,6 +49,15 @@ risers-bot/
     │   └── ollama/client.go # POST /api/chat; thinking; tool_calls (object vs string); streaming TODO
     ├── agent/           # REACT LOOP — orchestration (reason/act/observe), outside llm
     │   └── loop.go      # Run; MaxIterations; ToolExecutor
+    ├── tools/           # DCL API TOOLS — LLM-callable fetch for team 88 (planned)
+    │   ├── config.go    # Config{TeamID, BaseURL} from env (DCL_TEAM_ID=88)
+    │   ├── client.go    # DCLClient — thin HTTP+JSON wrapper
+    │   ├── registry.go  # Registry, ToolDef, BuildExecutor → agent.ToolExecutor
+    │   ├── tournaments.go # get_tournaments
+    │   ├── schedule.go  # get_schedule ("current" shortcut)
+    │   ├── match.go     # get_match_scorecard
+    │   ├── standings.go # get_points_table
+    │   └── player.go    # search_players + get_player_stats
     └── wa/              # FUTURE whatsmeow transport (empty now)
 ```
 
@@ -55,6 +66,12 @@ risers-bot/
 `db ← history ← agent ← cmd/wa`. `history` truncates **independently** from the
 provider's `numCtx`; the two budgets meet only in `cmd`. No cycles: `db` never
 imports `llm`/`history`; `ollama` never imports `history`.
+
+`agent → tools → DCL API`: tools fetch schedule/scorecards/standings/player
+stats for team 88; the registry dispatches by name via `agent.ToolExecutor`.
+`tools` imports `llm` (tool definitions) and `agent` (executor type) only —
+never `db`/`history`. Tools return full JSON for now; trim for the 4K window
+later. No caching yet.
 
 - `thinking` (Qwen `message.thinking`) → persist via `db.Message.Thinking`,
   **never** feed back into outgoing messages.
@@ -126,5 +143,6 @@ pursuing them mid-step.
   local qwen3.5:9b (6.6GB / 12GB ARM) latency. The `llm.Provider.Chat` signature
   stays unchanged either way, so the ReAct loop is unaffected.
 - Vector/retrieval over past sessions.
-- DCL live data (`dallascricket.org:3000/api/*` is auth-gated) — mock tool
-  results first.
+- DCL live scores (`/api/getbannerscoreinfo`) — add after the core 6 tools.
+- DCL auth-gated endpoints (rosters/admin) — parked, need auth.
+- Tools caching + response trimming for the 4K window — circle back later.
