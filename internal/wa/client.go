@@ -52,7 +52,7 @@ type Client struct {
 // WA_PHONE, and registers the message handler. It returns once logged in.
 func Connect(ctx context.Context, bot *Bot) (*Client, error) {
 	storePath := strings.TrimSpace(envOr("WA_STORE", "./wastore.db"))
-	container, err := sqlstore.New(ctx, "sqlite3", "file:"+storePath+"?_pragma=foreign_keys(1)", walog.Noop)
+	container, err := sqlstore.New(ctx, "sqlite3", "file:"+storePath+"?_foreign_keys=1", walog.Noop)
 	if err != nil {
 		return nil, fmt.Errorf("wa: open store: %w", err)
 	}
