@@ -23,6 +23,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3" // sqlite driver for the device store
@@ -43,9 +44,18 @@ func envOr(key, def string) string {
 }
 
 // Client wraps a whatsmeow connection with a Bot for message meaning.
+//
+// Self-test note: when you send a command from the same phone the bot is
+// linked to, the companion receives it flagged IsFromMe — indistinguishable
+// from the bot's own messages except by ID. Client records every reply ID
+// it sends and skips only those echoes; any other IsFromMe text came from
+// the phone's keyboard and is processed normally.
 type Client struct {
 	cli *whatsmeow.Client
 	bot *Bot
+
+	mu      sync.Mutex
+	sentIDs map[string]struct{}
 }
 
 // Connect opens the device store, connects, pairs on first run via
@@ -61,7 +71,7 @@ func Connect(ctx context.Context, bot *Bot) (*Client, error) {
 		return nil, fmt.Errorf("wa: get device: %w", err)
 	}
 	cli := whatsmeow.NewClient(device, walog.Noop)
-	c := &Client{cli: cli, bot: bot}
+	c := &Client{cli: cli, bot: bot, sentIDs: map[string]struct{}{}}
 	cli.AddEventHandler(c.handleEvent)
 
 	if err := cli.Connect(); err != nil {
@@ -102,8 +112,11 @@ func (c *Client) Wait(ctx context.Context) {
 // reply back to the originating chat. Non-message events are ignored.
 func (c *Client) handleEvent(evt any) {
 	msg, ok := evt.(*events.Message)
-	if !ok || msg.Info.IsFromMe {
+	if !ok {
 		return
+	}
+	if msg.Info.IsFromMe && c.isOwnEcho(string(msg.Info.ID)) {
+		return // our own reply coming back — never answer it
 	}
 	text := messageText(msg)
 	if text == "" {
@@ -120,11 +133,33 @@ func (c *Client) handleEvent(evt any) {
 		return
 	}
 	log.Printf("wa: replying to %s (%d chars)", msg.Info.Chat, len(reply))
-	if _, err := c.cli.SendMessage(context.Background(), msg.Info.Chat, &waE2E.Message{
+	resp, err := c.cli.SendMessage(context.Background(), msg.Info.Chat, &waE2E.Message{
 		Conversation: proto.String(reply),
-	}); err != nil {
+	})
+	if err != nil {
 		log.Printf("wa: send failed to %s: %v", msg.Info.Chat, err)
+		return
 	}
+	c.markSent(string(resp.ID))
+}
+
+// isOwnEcho reports whether id is a reply this bot sent (consumed
+// one-shot: each sent ID is skipped exactly once, then forgotten).
+func (c *Client) isOwnEcho(id string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.sentIDs[id]; !ok {
+		return false
+	}
+	delete(c.sentIDs, id)
+	return true
+}
+
+// markSent records a reply ID so its echo is skipped.
+func (c *Client) markSent(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sentIDs[id] = struct{}{}
 }
 
 // messageText returns the readable text of a message, covering plain and
