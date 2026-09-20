@@ -82,6 +82,7 @@ func run(ctx context.Context, args []string) error {
 	reg.Register(tools.SearchPlayersTool)
 	reg.Register(tools.PlayerStatsTool)
 	reg.Register(tools.PlayerStatsFilteredTool)
+	reg.Register(tools.SummarizeMatchTool)
 
 	loop := agent.New(store, hist, provider, reg.BuildExecutor(dcl))
 	reply, err := loop.Run(ctx, "cli", userText, reg.ToolDefs())
