@@ -72,7 +72,9 @@ func Connect(ctx context.Context, bot *Bot) (*Client, error) {
 		if phone == "" {
 			return nil, fmt.Errorf("wa: first run needs WA_PHONE (digits only, e.g. 15551234567) for pairing-code login")
 		}
-		code, err := cli.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Risers Bot")
+		// Display name must look like "Browser (OS)" — the server
+		// validates it and 400s anything else (e.g. a bot name).
+		code, err := cli.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Mac OS)")
 		if err != nil {
 			return nil, fmt.Errorf("wa: pair: %w", err)
 		}
