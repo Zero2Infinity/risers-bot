@@ -123,7 +123,11 @@ func (c *Client) handleEvent(evt any) {
 		return
 	}
 	log.Printf("wa: recv from %s in %s: %.80q", msg.Info.Sender, msg.Info.Chat, text)
-	reply, err := c.bot.HandleMessage(context.Background(), msg.Info.Sender.String(), text)
+	// Fresh session per message: no cross-prompt history, so prior tool
+	// observations never eat the context window. Multi-tool chains still
+	// work — they happen inside one Loop.Run, not across sessions.
+	sessionID := fmt.Sprintf("wa-%d", time.Now().UnixNano())
+	reply, err := c.bot.HandleMessage(context.Background(), sessionID, text)
 	if err != nil {
 		log.Printf("wa: turn failed for %s: %v", msg.Info.Sender, err)
 		reply = "Sorry — I hit an error looking that up. Try again?"
