@@ -56,19 +56,9 @@ func executeGetSchedule(ctx context.Context, client *DCLClient, args map[string]
 
 	// teamId query param is mandatory — without it the API returns an
 	// error envelope with no teamShedules key (verified live).
-	path := fmt.Sprintf("/api/schedules/%d?teamId=%d", team, team)
-	pages, err := client.GetPaginated(ctx, path, "teamShedules")
+	all, err := fetchFixtures(ctx, client, team)
 	if err != nil {
 		return "", fmt.Errorf("get_schedule: %w", err)
-	}
-
-	var all []fixtureRow
-	for i, p := range pages {
-		var env fixtureListResponse
-		if err := json.Unmarshal(p, &env); err != nil {
-			return "", fmt.Errorf("get_schedule page %d: %w", i, err)
-		}
-		all = append(all, env.MatchFixtures...)
 	}
 
 	if raw, ok := args["tournament_id"]; ok && raw != nil {
@@ -106,6 +96,27 @@ func executeGetSchedule(ctx context.Context, client *DCLClient, args map[string]
 		return "", fmt.Errorf("get_schedule marshal: %w", err)
 	}
 	return string(out), nil
+}
+
+// fetchFixtures pulls ALL fixture pages for one team via the team-scoped
+// endpoint. Shared with summarize.go (latest-game resolution) — keep it
+// here, not duplicated.
+func fetchFixtures(ctx context.Context, client *DCLClient, team int) ([]fixtureRow, error) {
+	path := fmt.Sprintf("/api/schedules/%d?teamId=%d", team, team)
+	pages, err := client.GetPaginated(ctx, path, "teamShedules")
+	if err != nil {
+		return nil, err
+	}
+
+	var all []fixtureRow
+	for i, p := range pages {
+		var env fixtureListResponse
+		if err := json.Unmarshal(p, &env); err != nil {
+			return nil, fmt.Errorf("page %d: %w", i, err)
+		}
+		all = append(all, env.MatchFixtures...)
+	}
+	return all, nil
 }
 
 // resolveTournamentID turns the model's tournament_id arg into an int.

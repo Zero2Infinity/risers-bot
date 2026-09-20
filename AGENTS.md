@@ -55,7 +55,8 @@ risers-bot/
     │   ├── registry.go  # Registry, ToolDef, BuildExecutor → agent.ToolExecutor
     │   ├── tournaments.go # get_tournaments
     │   ├── schedule.go  # get_schedule ("current" shortcut)
-    │   ├── match.go     # get_match_scorecard
+    │   ├── scorecard.go # get_match_scorecard (entire card, deterministic)
+    │   ├── team.go      # find_opponent tool + opponent lookup ("Royals" → id)
     │   ├── standings.go # get_points_table
     │   └── player.go    # search_players + get_player_stats
     └── wa/              # FUTURE whatsmeow transport (empty now)

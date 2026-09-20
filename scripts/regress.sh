@@ -22,6 +22,12 @@ PROMPTS=(
   "List Rahul Amratlal Patel runs scored per game in DCL Fall 2026"
   "List Rahul Amratlal Patel runs scored per game in DCL Summer 2026. One line per game: runs off balls."
   "Summarize match 5954: who played, toss, result, and top 3 batters. Keep it short."
+  "Summarize last game for me."
+  "What is the team id for the Royals?"
+  "Summarize the match against Daring team in DCL Fall 2026."
+  # BLOCKED on 5692 string-typed IDs (see scorecard.go NOTEs) — enable after
+  # the int-or-string revisit:
+  # "Summarize the match against Royals team in DCL Fall 2026."
 )
 
 build_if_needed() {

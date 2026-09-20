@@ -17,8 +17,8 @@ for answers.
 | `llm` abstraction — `Provider`, `ChatMessage`/`Tool`/`ToolCall`/`Result` | Done | `internal/llm/provider.go` |
 | `ollama` client — non-streaming `POST /api/chat`, `num_ctx`, `thinking`, tool calls | Done | `internal/llm/ollama/client.go` |
 | `agent` ReAct loop — `SystemPrompt`, `MaxIterations`, `ToolExecutor`, `Loop.Run` | Done | `internal/agent/loop.go` |
-| `tools` DCL API — `DCLClient`, `Registry`, 7 slim tools (below) | Done | `internal/tools/*.go` |
-| CLI wiring — `db` → `history` → `ollama` → `agent` + tools | Done | `cmd/risers-bot/main.go` |
+| `tools` DCL API — `DCLClient`, `Registry`, 9 tools (below) | Next | `internal/tools/*.go` (new) |
+| CLI wiring — `db` → `history` → `ollama` → `agent` + tools | Next | `cmd/risers-bot/main.go` |
 | Compactor adapter (`ollama` → `history`) | Next | `internal/agent/compactor.go` (new) |
 | whatsmeow transport | Parked | `internal/wa/*` (new) |
 | Streaming (`stream:true`) | Parked | `internal/llm/ollama/client.go` |
@@ -31,15 +31,18 @@ Default team: Risers, `DCL_TEAM_ID=88`.
 
 | Tool | Endpoint | Notes |
 |---|---|---|
-| `get_tournaments` | `/api/gettournamentlist` | Paginated, slim id/name/dates rows |
-| `get_schedule` | `/api/schedules/{teamId}` | Team-scoped; `"current"` picks latest active |
-| `get_match_scorecard` | `/api/getmatchdata/{match_id}` | Slim innings; `flexFloat` for mixed string/number rates |
-| `get_points_table` | `/api/tournamentpointstable/{tournament_id}` | Slim division/round rows; optional `team_id` narrows to one team (Risers are 88, not Dallas Risers CC) |
-| `search_players` | `/api/getplayerlistbysearch` | Server ignores params — client-side substring filter, cap 20 |
-| `get_player_stats` | `/api/getplayerstatistics/{user_id}` | Slim per-game batting/bowling grouped by format |
-| `get_player_stats_filtered` | same + `tournament_id` | Numbered games with precomputed totals — model copies lines |
+| `get_tournaments` | `/api/gettournamentlist` | List tournaments |
+| `get_schedule` | `/api/schedules/{teamId}` | Team-scoped fixtures |
+| `get_match_scorecard` | `/api/getmatchdata/{match_id}` | Full scorecard, both innings |
+| `get_points_table` | `/api/tournamentpointstable/{tournament_id}` | Standings, W/L/NRR |
+| `search_players` | `/api/getplayerlistbysearch?q=` | Name → `user_id` |
+| `get_player_stats` | `/api/getplayerstatistics/{user_id}` | Career batting + bowling |
+| `get_player_stats_filtered` | `/api/getplayerstatistics/{user_id}` + `tournament_id` | Per-tournament stats with precomputed totals |
+| `summarize_match` | `/api/getmatchdata/{match_id}` | Risers pundit summary: complete card + insights |
+| `find_opponent` | team fixtures | Partial team name → team and match ids |
 
-Deferred: `get_live_scores` (`/api/getbannerscoreinfo`), caching.
+Deferred: `get_live_scores` (`/api/getbannerscoreinfo`), response trimming for the
+4K context window, caching. Tools return full JSON for now.
 
 ## Repository structure
 
