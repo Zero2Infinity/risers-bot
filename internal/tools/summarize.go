@@ -33,7 +33,7 @@ var SummarizeMatchTool = ToolDef{
 			"type": "object",
 			"properties": map[string]any{
 				"match_id": map[string]any{
-					"description": "Match id number, \"last\" for the most recent completed game, or an opponent team name (e.g. \"Phoenix\") — if several teams match, the tool lists them so you can ask the user which one",
+					"description": "Match id number (preferred when known from find_opponent), \"last\" for the most recent completed game, or an opponent team name (e.g. \"Phoenix\") — if several teams match, the tool lists them so you can ask the user which one",
 				},
 			},
 			"required": []string{"match_id"},

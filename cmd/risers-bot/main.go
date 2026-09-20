@@ -83,6 +83,7 @@ func run(ctx context.Context, args []string) error {
 	reg.Register(tools.TournamentTool)
 	reg.Register(tools.ScheduleTool)
 	reg.Register(tools.ScorecardTool)
+	reg.Register(tools.FindOpponentTool)
 	reg.Register(tools.PointsTableTool)
 	reg.Register(tools.SearchPlayersTool)
 	reg.Register(tools.PlayerStatsTool)
