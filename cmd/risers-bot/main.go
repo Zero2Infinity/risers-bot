@@ -2,6 +2,8 @@
 // pundit bot. It wires persistence → history → model → agent → DCL tools,
 // runs one user turn through the ReAct loop, and prints the reply.
 //
+// Two modes: one-shot CLI (default) and WhatsApp listener (-wa).
+//
 // WIRING (dependency order db ← history ← agent ← cmd, agent → tools → DCL):
 //
 //	cfg := tools.LoadConfig()            // DCL_TEAM_ID=88 default
@@ -21,25 +23,38 @@
 //	reply, err := loop.Run(ctx, sessionID, userText, reg.ToolDefs())
 //
 // Usage v1: risers-bot "who won the last Risers game?"  (single turn;
-// session "cli"). WhatsApp transport (internal/wa) replaces this later.
+// session "cli"). WhatsApp mode: risers-bot -wa (needs WA_PHONE on first
+// run for pairing-code login; session per sender JID).
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
 
 	"risers-bot/internal/agent"
 	"risers-bot/internal/db"
 	"risers-bot/internal/history"
+	"risers-bot/internal/llm"
 	"risers-bot/internal/llm/ollama"
 	"risers-bot/internal/tools"
+	"risers-bot/internal/wa"
 )
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
+	waMode := flag.Bool("wa", false, "run as WhatsApp listener for !risers commands")
+	flag.Parse()
+	var err error
+	if *waMode {
+		err = runWA(context.Background())
+	} else {
+		err = run(context.Background(), flag.Args())
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -53,6 +68,56 @@ func run(ctx context.Context, args []string) error {
 	}
 	userText := strings.Join(args, " ")
 
+	stack, err := buildStack()
+	if err != nil {
+		return err
+	}
+	defer stack.store.Close()
+
+	reply, err := stack.loop.Run(ctx, "cli", userText, stack.toolDefs)
+	if err != nil {
+		return fmt.Errorf("run: %w", err)
+	}
+	fmt.Println(reply)
+	return nil
+}
+
+// runWA connects to WhatsApp and answers "!risers <prompt>" messages until
+// interrupted (Ctrl-C). Each sender JID gets its own agent session.
+func runWA(ctx context.Context) error {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
+
+	stack, err := buildStack()
+	if err != nil {
+		return err
+	}
+	defer stack.store.Close()
+
+	bot := &wa.Bot{
+		RunTurn: func(ctx context.Context, sessionID, userText string) (string, error) {
+			return stack.loop.Run(ctx, sessionID, userText, stack.toolDefs)
+		},
+	}
+	client, err := wa.Connect(ctx, bot)
+	if err != nil {
+		return err
+	}
+	log.Println("risers-bot: listening for !risers commands (Ctrl-C to stop)")
+	client.Wait(ctx)
+	return nil
+}
+
+// stack is the shared agent stack built once for either mode.
+type stack struct {
+	store    *db.Store
+	loop     *agent.Loop
+	toolDefs []llm.Tool
+}
+
+// buildStack wires persistence → history → model → agent → DCL tools.
+// Shared by one-shot CLI and WhatsApp modes; see the package doc.
+func buildStack() (*stack, error) {
 	cfg := tools.LoadConfig()
 
 	dbPath := strings.TrimSpace(os.Getenv("RISERS_DB"))
@@ -61,9 +126,8 @@ func run(ctx context.Context, args []string) error {
 	}
 	store, err := db.Open(dbPath)
 	if err != nil {
-		return fmt.Errorf("open db: %w", err)
+		return nil, fmt.Errorf("open db: %w", err)
 	}
-	defer store.Close()
 
 	hist := history.New(store, nil, 20)
 
@@ -91,10 +155,5 @@ func run(ctx context.Context, args []string) error {
 	reg.Register(tools.SummarizeMatchTool)
 
 	loop := agent.New(store, hist, provider, reg.BuildExecutor(dcl))
-	reply, err := loop.Run(ctx, "cli", userText, reg.ToolDefs())
-	if err != nil {
-		return fmt.Errorf("run: %w", err)
-	}
-	fmt.Println(reply)
-	return nil
+	return &stack{store: store, loop: loop, toolDefs: reg.ToolDefs()}, nil
 }

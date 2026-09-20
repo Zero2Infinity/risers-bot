@@ -59,7 +59,7 @@ risers-bot/
     │   ├── team.go      # find_opponent tool + opponent lookup ("Royals" → id)
     │   ├── standings.go # get_points_table
     │   └── player.go    # search_players + get_player_stats
-    └── wa/              # FUTURE whatsmeow transport (empty now)
+    └── wa/              # WhatsApp transport: bot.go (!risers parsing, per-JID sessions) + client.go (pairing, events, send); -wa flag in cmd
 ```
 
 ### Package responsibilities & dependency order
