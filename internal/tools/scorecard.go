@@ -56,6 +56,39 @@ func (f *flexFloat) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// flexInt decodes a JSON string or number as int. The DCL API mixes 7864,
+// "4056", and "" for bowler/batter ID fields across matches (empty string
+// means "no recorded ID" → 0, which callers treat as unknown).
+type flexInt int
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*f = 0
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(b, &n); err == nil {
+		*f = flexInt(n)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	*f = flexInt(n)
+	return nil
+}
+
 // ScorecardTool is the registry entry for get_match_scorecard. Register it
 // in cmd via reg.Register(ScorecardTool).
 var ScorecardTool = ToolDef{
@@ -184,16 +217,11 @@ type batterRow struct {
 	StrikeRate    flexFloat `json:"strikeRate"`
 	BattingStatus string    `json:"battingStatus"`
 	OutType       string    `json:"outType"`
-	// NOTE: match 5692 sends this as a JSON string (e.g. "4056", sometimes
-	// ""). Kept strict int for now — revisit with a lenient int-or-string
-	// decode if more matches fail the same way.
-	BowlerID int `json:"bowler"`
+	BowlerID      flexInt   `json:"bowler"`
 }
 
 type bowlerRow struct {
-	// NOTE: same as batterRow.BowlerID — match 5692 sends this as a string
-	// (e.g. "3108"). Kept strict int; revisit together if it spreads.
-	ID      int       `json:"id"`
+	ID      flexInt   `json:"id"`
 	Name    string    `json:"name"`
 	Over    float64   `json:"over"`
 	Maidens int       `json:"maiden"`
@@ -390,7 +418,7 @@ func bowlerName(bowlers []bowlerRow, id int) string {
 		return ""
 	}
 	for _, b := range bowlers {
-		if b.ID == id {
+		if int(b.ID) == id {
 			return b.Name
 		}
 	}
