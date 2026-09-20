@@ -24,7 +24,7 @@ for answers.
 | Streaming (`stream:true`) | Parked | `internal/llm/ollama/client.go` |
 | Vector/retrieval over past sessions | Parked | `internal/vector/*` (new) |
 
-### DCL tools (next)
+### DCL tools (done, all slimmed for the 4K window)
 
 Base URL: `https://dallascricket.org:3000` (public `GET`, no auth).
 Default team: Risers, `DCL_TEAM_ID=88`.
