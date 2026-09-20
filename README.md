@@ -17,7 +17,7 @@ for answers.
 | `llm` abstraction — `Provider`, `ChatMessage`/`Tool`/`ToolCall`/`Result` | Done | `internal/llm/provider.go` |
 | `ollama` client — non-streaming `POST /api/chat`, `num_ctx`, `thinking`, tool calls | Done | `internal/llm/ollama/client.go` |
 | `agent` ReAct loop — `SystemPrompt`, `MaxIterations`, `ToolExecutor`, `Loop.Run` | Done | `internal/agent/loop.go` |
-| `tools` DCL API — `DCLClient`, `Registry`, 6 tools (below) | Next | `internal/tools/*.go` (new) |
+| `tools` DCL API — `DCLClient`, `Registry`, 9 tools (below) | Next | `internal/tools/*.go` (new) |
 | CLI wiring — `db` → `history` → `ollama` → `agent` + tools | Next | `cmd/risers-bot/main.go` |
 | Compactor adapter (`ollama` → `history`) | Next | `internal/agent/compactor.go` (new) |
 | whatsmeow transport | Parked | `internal/wa/*` (new) |
@@ -32,11 +32,14 @@ Default team: Risers, `DCL_TEAM_ID=88`.
 | Tool | Endpoint | Notes |
 |---|---|---|
 | `get_tournaments` | `/api/gettournamentlist` | List tournaments |
-| `get_schedule` | `/api/getmatchlist/{tournament_id}` | `tournament_id: "current"` picks latest active |
+| `get_schedule` | `/api/schedules/{teamId}` | Team-scoped fixtures |
 | `get_match_scorecard` | `/api/getmatchdata/{match_id}` | Full scorecard, both innings |
 | `get_points_table` | `/api/tournamentpointstable/{tournament_id}` | Standings, W/L/NRR |
 | `search_players` | `/api/getplayerlistbysearch?q=` | Name → `user_id` |
 | `get_player_stats` | `/api/getplayerstatistics/{user_id}` | Career batting + bowling |
+| `get_player_stats_filtered` | `/api/getplayerstatistics/{user_id}` + `tournament_id` | Per-tournament stats with precomputed totals |
+| `summarize_match` | `/api/getmatchdata/{match_id}` | Risers pundit summary: complete card + insights |
+| `find_opponent` | team fixtures | Partial team name → team and match ids |
 
 Deferred: `get_live_scores` (`/api/getbannerscoreinfo`), response trimming for the
 4K context window, caching. Tools return full JSON for now.
