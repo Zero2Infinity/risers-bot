@@ -109,14 +109,17 @@ func (c *Client) handleEvent(evt any) {
 	if text == "" {
 		return
 	}
+	log.Printf("wa: recv from %s in %s: %.80q", msg.Info.Sender, msg.Info.Chat, text)
 	reply, err := c.bot.HandleMessage(context.Background(), msg.Info.Sender.String(), text)
 	if err != nil {
 		log.Printf("wa: turn failed for %s: %v", msg.Info.Sender, err)
 		reply = "Sorry — I hit an error looking that up. Try again?"
 	}
 	if reply == "" {
+		log.Printf("wa: ignoring non-command from %s", msg.Info.Sender)
 		return
 	}
+	log.Printf("wa: replying to %s (%d chars)", msg.Info.Chat, len(reply))
 	if _, err := c.cli.SendMessage(context.Background(), msg.Info.Chat, &waE2E.Message{
 		Conversation: proto.String(reply),
 	}); err != nil {
