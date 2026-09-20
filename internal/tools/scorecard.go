@@ -184,10 +184,15 @@ type batterRow struct {
 	StrikeRate    flexFloat `json:"strikeRate"`
 	BattingStatus string    `json:"battingStatus"`
 	OutType       string    `json:"outType"`
-	BowlerID      int       `json:"bowler"`
+	// NOTE: match 5692 sends this as a JSON string (e.g. "4056", sometimes
+	// ""). Kept strict int for now — revisit with a lenient int-or-string
+	// decode if more matches fail the same way.
+	BowlerID int `json:"bowler"`
 }
 
 type bowlerRow struct {
+	// NOTE: same as batterRow.BowlerID — match 5692 sends this as a string
+	// (e.g. "3108"). Kept strict int; revisit together if it spreads.
 	ID      int       `json:"id"`
 	Name    string    `json:"name"`
 	Over    float64   `json:"over"`
