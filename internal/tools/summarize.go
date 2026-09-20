@@ -28,7 +28,7 @@ import (
 var SummarizeMatchTool = ToolDef{
 	Tool: llm.Tool{
 		Name:        "summarize_match",
-		Description: "Summarize a DCL match as a cricket pundit would, from Risers (team 88) perspective: match overview, Risers batting/bowling highlights, key moments, and what we as the team could do better next time. Returns the complete slim scorecard plus precomputed insights — present them in the pundit's voice, do not invent figures. Pass match_id as a number, or the string \"last\" for the team's most recent completed game.",
+		Description: "Summarize a DCL match as a cricket pundit would, from Risers (team 88) perspective: match overview, Risers batting/bowling highlights, key moments, and what we as the team could do better next time. Returns the complete slim scorecard plus precomputed insights — present them in the pundit's voice, do not invent figures. Every sentence must cite a number from the result (extras, economy, runs, balls, partnership). No fielding events (catches, misfields, run-outs) — the ball-by-ball data does not include them. Pass match_id as a number, or the string \"last\" for the team's most recent completed game.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
