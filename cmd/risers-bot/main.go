@@ -71,7 +71,12 @@ func run(ctx context.Context, args []string) error {
 	if model == "" {
 		model = "qwen3.5:9b"
 	}
-	provider := ollama.NewClient(model, ollama.WithContextWindow(4096))
+	// 6144 (was 4096; 8192 also verified): a full two-innings card
+	// observation (~4KB) plus tool definitions plus qwen thinking leaves no
+	// generation room at 4K — match 5783 answers were cut mid-table twice.
+	// 16K was measured at 5-8x latency; 6K is the leanest window that fits a
+	// full card answer.
+	provider := ollama.NewClient(model, ollama.WithContextWindow(6144))
 
 	dcl := tools.NewDCLClient(cfg)
 	reg := tools.NewRegistry()
