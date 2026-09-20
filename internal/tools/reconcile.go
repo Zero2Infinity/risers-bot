@@ -35,16 +35,24 @@ var fillerWords = map[string]bool{
 }
 
 // opponentMentioned reports whether userText contains a distinctive token
-// of oppName (case-insensitive, min 4 letters, filler words skipped).
+// of oppName as a whole word (case-insensitive, min 4 letters, filler
+// words skipped). Whole-word, not substring: "royals" must not match
+// "The Royal Renegades".
 func opponentMentioned(userText, oppName string) bool {
-	tl := strings.ToLower(userText)
-	for _, w := range strings.FieldsFunc(strings.ToLower(oppName), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}) {
+	split := func(s string) []string {
+		return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+	}
+	inText := map[string]bool{}
+	for _, w := range split(userText) {
+		inText[w] = true
+	}
+	for _, w := range split(oppName) {
 		if len(w) < 4 || fillerWords[w] {
 			continue
 		}
-		if strings.Contains(tl, w) {
+		if inText[w] {
 			return true
 		}
 	}
