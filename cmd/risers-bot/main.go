@@ -74,7 +74,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer stack.store.Close()
 
-	reply, err := stack.loop.Run(ctx, "cli", userText, stack.toolDefs)
+	reply, err := stack.loopFor(userText).Run(ctx, "cli", userText, stack.toolDefs)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -96,7 +96,7 @@ func runWA(ctx context.Context) error {
 
 	bot := &wa.Bot{
 		RunTurn: func(ctx context.Context, sessionID, userText string) (string, error) {
-			return stack.loop.Run(ctx, sessionID, userText, stack.toolDefs)
+			return stack.loopFor(userText).Run(ctx, sessionID, userText, stack.toolDefs)
 		},
 	}
 	client, err := wa.Connect(ctx, bot)
@@ -111,8 +111,22 @@ func runWA(ctx context.Context) error {
 // stack is the shared agent stack built once for either mode.
 type stack struct {
 	store    *db.Store
-	loop     *agent.Loop
+	hist     *history.History
+	provider *ollama.Client
+	reg      *tools.Registry
+	dcl      *tools.DCLClient
 	toolDefs []llm.Tool
+}
+
+// loopFor builds a ReAct loop whose executor reconciles match calls
+// against userText before dispatch (see tools.ReconcileMatchCall).
+// Cheap per turn; history/store/provider/registry are shared.
+func (s *stack) loopFor(userText string) *agent.Loop {
+	base := s.reg.BuildExecutor(s.dcl)
+	exec := func(ctx context.Context, call llm.ToolCall) (string, error) {
+		return base(ctx, tools.ReconcileMatchCall(ctx, s.dcl, userText, call))
+	}
+	return agent.New(s.store, s.hist, s.provider, exec)
 }
 
 // buildStack wires persistence → history → model → agent → DCL tools.
@@ -135,11 +149,10 @@ func buildStack() (*stack, error) {
 	if model == "" {
 		model = "qwen3.5:9b"
 	}
-	// 8192 (was 6144): multi-hop tool history (tournaments list + opponent
-	// lookup + 6K full-card observation) left no generation room at 6K —
-	// 5597/5401 summaries came back empty. 16K was measured at 5-8x
-	// latency; re-measure if this grows again.
-	provider := ollama.NewClient(model, ollama.WithContextWindow(8192))
+	// 6144: 4K truncates 5783-class cards mid-table even with fresh
+	// sessions (no history); 6K is the floor for full cards. 16K measured
+	// at 5-8x latency.
+	provider := ollama.NewClient(model, ollama.WithContextWindow(6144))
 
 	dcl := tools.NewDCLClient(cfg)
 	reg := tools.NewRegistry()
@@ -153,6 +166,5 @@ func buildStack() (*stack, error) {
 	reg.Register(tools.PlayerStatsFilteredTool)
 	reg.Register(tools.SummarizeMatchTool)
 
-	loop := agent.New(store, hist, provider, reg.BuildExecutor(dcl))
-	return &stack{store: store, loop: loop, toolDefs: reg.ToolDefs()}, nil
+	return &stack{store: store, hist: hist, provider: provider, reg: reg, dcl: dcl, toolDefs: reg.ToolDefs()}, nil
 }
