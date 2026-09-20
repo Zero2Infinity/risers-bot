@@ -135,12 +135,11 @@ func buildStack() (*stack, error) {
 	if model == "" {
 		model = "qwen3.5:9b"
 	}
-	// 6144 (was 4096; 8192 also verified): a full two-innings card
-	// observation (~4KB) plus tool definitions plus qwen thinking leaves no
-	// generation room at 4K — match 5783 answers were cut mid-table twice.
-	// 16K was measured at 5-8x latency; 6K is the leanest window that fits a
-	// full card answer.
-	provider := ollama.NewClient(model, ollama.WithContextWindow(6144))
+	// 8192 (was 6144): multi-hop tool history (tournaments list + opponent
+	// lookup + 6K full-card observation) left no generation room at 6K —
+	// 5597/5401 summaries came back empty. 16K was measured at 5-8x
+	// latency; re-measure if this grows again.
+	provider := ollama.NewClient(model, ollama.WithContextWindow(8192))
 
 	dcl := tools.NewDCLClient(cfg)
 	reg := tools.NewRegistry()
