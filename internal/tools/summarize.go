@@ -28,12 +28,12 @@ import (
 var SummarizeMatchTool = ToolDef{
 	Tool: llm.Tool{
 		Name:        "summarize_match",
-		Description: "Summarize a DCL match as a cricket pundit would, from Risers (team 88) perspective: match overview, Risers batting/bowling highlights, key moments, and what we as the team could do better next time. Returns the complete slim scorecard plus precomputed insights — present them in the pundit's voice, do not invent figures. Every sentence must cite a number from the result (extras, economy, runs, balls, partnership). No fielding events (catches, misfields, run-outs) — the ball-by-ball data does not include them. Pass match_id as a number, or the string \"last\" for the team's most recent completed game.",
+		Description: "Summarize a DCL match as a cricket pundit would, from Risers (team 88) perspective. Always use these sections: Overview; Risers batting highlights; Risers bowling highlights; Key moments; Areas of improvement (what we as the team could do better next time); one closing line to excite the team. Returns the complete slim scorecard plus precomputed insights — present them in the pundit's voice, do not invent figures. Do not reproduce the scorecard tables; write narrative analysis citing only the key figures. No fielding events (catches, misfields, run-outs) — the ball-by-ball data does not include them. Pass match_id as a number, or the string \"last\" for the team's most recent completed game.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"match_id": map[string]any{
-					"description": "Match id number (preferred when known from find_opponent), \"last\" for the most recent completed game, or an opponent team name (e.g. \"Phoenix\") — if several teams match, the tool lists them so you can ask the user which one",
+					"description": "An opponent team name (e.g. \"Phoenix\") — resolves deterministically to their latest completed match, preferred over find_opponent; or a match id number; or \"last\" for the most recent completed game. If several teams match, the tool lists them so you can ask the user which one",
 				},
 			},
 			"required": []string{"match_id"},

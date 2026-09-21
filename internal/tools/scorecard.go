@@ -66,7 +66,7 @@ var ScorecardTool = ToolDef{
 			"type": "object",
 			"properties": map[string]any{
 				"match_id": map[string]any{
-					"description": "Match id number, \"last\" for the most recent completed game, or an opponent team name (e.g. \"Phoenix\") — if several teams match, the tool lists them so you can ask the user which one",
+					"description": "An opponent team name (e.g. \"Phoenix\") — resolves deterministically to their latest completed match, preferred over find_opponent; or a match id number; or \"last\" for the most recent completed game. If several teams match, the tool lists them so you can ask the user which one",
 				},
 			},
 			"required": []string{"match_id"},
