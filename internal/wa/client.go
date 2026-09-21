@@ -20,7 +20,6 @@ package wa
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -33,6 +32,8 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	walog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
+
+	"risers-bot/internal/log"
 )
 
 // envOr returns the env value or def when unset/blank.
@@ -97,7 +98,7 @@ func Connect(ctx context.Context, bot *Bot) (*Client, error) {
 			}
 		}
 	}
-	log.Printf("wa: logged in as %s", cli.Store.ID)
+	log.L().Info("wa: logged in", "id", cli.Store.ID)
 	return c, nil
 }
 
@@ -122,26 +123,26 @@ func (c *Client) handleEvent(evt any) {
 	if text == "" {
 		return
 	}
-	log.Printf("wa: recv from %s in %s: %.80q", msg.Info.Sender, msg.Info.Chat, text)
+	log.L().Info("wa: recv", "sender", msg.Info.Sender, "chat", msg.Info.Chat, "text", log.Preview(text, 80))
 	// Fresh session per message: no cross-prompt history, so prior tool
 	// observations never eat the context window. Multi-tool chains still
 	// work — they happen inside one Loop.Run, not across sessions.
 	sessionID := fmt.Sprintf("wa-%d", time.Now().UnixNano())
 	reply, err := c.bot.HandleMessage(context.Background(), sessionID, text)
 	if err != nil {
-		log.Printf("wa: turn failed for %s: %v", msg.Info.Sender, err)
+		log.L().Error("wa: turn failed", "sender", msg.Info.Sender, "err", err)
 		reply = "Sorry — I hit an error looking that up. Try again?"
 	}
 	if reply == "" {
-		log.Printf("wa: ignoring non-command from %s", msg.Info.Sender)
+		log.L().Info("wa: ignoring non-command", "sender", msg.Info.Sender)
 		return
 	}
-	log.Printf("wa: replying to %s (%d chars)", msg.Info.Chat, len(reply))
+	log.L().Info("wa: replying", "chat", msg.Info.Chat, "reply_len", len(reply))
 	resp, err := c.cli.SendMessage(context.Background(), msg.Info.Chat, &waE2E.Message{
 		Conversation: proto.String(reply),
 	})
 	if err != nil {
-		log.Printf("wa: send failed to %s: %v", msg.Info.Chat, err)
+		log.L().Error("wa: send failed", "chat", msg.Info.Chat, "err", err)
 		return
 	}
 	c.markSent(string(resp.ID))

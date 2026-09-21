@@ -29,6 +29,7 @@ import (
 	"risers-bot/internal/db"
 	"risers-bot/internal/history"
 	"risers-bot/internal/llm"
+	"risers-bot/internal/log"
 )
 
 // ── Agent behavior ─────────────────────────────────────────────────────────
@@ -112,11 +113,13 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 	if _, err := l.store.GetOrCreateSession(sessionID, "cli"); err != nil {
 		return "", fmt.Errorf("agent: get or create session: %w", err)
 	}
+	log.L().Info("agent: turn start", "session_id", sessionID, "user", log.Preview(userText, 80))
 
 	window, err := l.history.ContextFor(ctx, sessionID)
 	if err != nil {
 		return "", fmt.Errorf("agent: history context: %w", err)
 	}
+	log.L().Debug("agent: history window", "session_id", sessionID, "messages", len(window))
 	msgs := []llm.ChatMessage{{Role: llm.RoleSystem, Content: SystemPrompt}}
 	for _, m := range window {
 		msgs = append(msgs, llm.ChatMessage{
@@ -133,10 +136,15 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 
 	// REACT loop
 	for iter := 1; iter <= MaxIterations; iter++ {
+		log.L().Info("agent: llm request", "session_id", sessionID, "iter", iter, "messages", len(msgs), "tools", len(tools))
 		res, err := l.provider.Chat(ctx, msgs, tools)
 		if err != nil {
 			return "", fmt.Errorf("agent: provider chat iter %d: %w", iter, err)
 		}
+		log.L().Info("agent: llm response", "session_id", sessionID, "iter", iter,
+			"content_len", len(res.Content), "thinking_len", len(res.Thinking), "tool_calls", len(res.ToolCalls))
+		log.L().Debug("agent: thinking", "session_id", sessionID, "iter", iter, "preview", log.Preview(res.Thinking, 200))
+		log.L().Debug("agent: content", "session_id", sessionID, "iter", iter, "preview", log.Preview(res.Content, 200))
 		if err := l.store.SaveMessage(sessionID, "assistant", res.Content, res.Thinking, ""); err != nil {
 			return "", fmt.Errorf("agent: save assistant iter %d: %w", iter, err)
 		}
@@ -144,16 +152,21 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 		// Append assistant turn (Content only) so next Chat sees tool_calls context.
 		msgs = append(msgs, llm.ChatMessage{Role: llm.RoleAssistant, Content: res.Content})
 		if len(res.ToolCalls) == 0 {
+			log.L().Info("agent: turn complete", "session_id", sessionID, "iterations", iter, "content_len", len(res.Content))
 			return res.Content, nil
 		}
 		if l.executor == nil {
 			return "", fmt.Errorf("agent: tool calls but no executor")
 		}
 		for _, tc := range res.ToolCalls {
+			log.L().Info("agent: tool call", "session_id", sessionID, "iter", iter, "name", tc.Name)
+			log.L().Debug("agent: tool args", "session_id", sessionID, "iter", iter, "name", tc.Name, "args", tc.Arguments)
 			obs, err := l.executor(ctx, tc)
 			if err != nil {
 				return "", fmt.Errorf("agent: tool %q: %w", tc.Name, err)
 			}
+			log.L().Info("agent: tool result", "session_id", sessionID, "iter", iter, "name", tc.Name, "obs_len", len(obs))
+			log.L().Debug("agent: tool observation", "session_id", sessionID, "iter", iter, "name", tc.Name, "preview", log.Preview(obs, 200))
 			if err := l.store.SaveMessage(sessionID, "tool", obs, "", tc.Name); err != nil {
 				return "", fmt.Errorf("agent: save tool %q: %w", tc.Name, err)
 			}
@@ -166,5 +179,6 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 		}
 	}
 
+	log.L().Info("agent: max iterations exceeded", "session_id", sessionID, "max", MaxIterations)
 	return "", fmt.Errorf("agent: max iterations %d exceeded", MaxIterations)
 }
