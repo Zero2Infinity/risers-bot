@@ -159,6 +159,7 @@ go test ./...
 |---|---|---|
 | `RISERS_DB` | `./risers.db` | SQLite database path |
 | `RISERS_LOG_LEVEL` | `info` | Log level: `info` or `debug` (also `-log` flag) |
+| `RISERS_LOG_FORMAT` | `text` | Log format: `text` (readable) or `json` (JSONL for `jq`) |
 | `OLLAMA_MODEL` | `qwen3.5:9b` | Ollama model name |
 | `RISERS_TEAM_ID` | `88` | DCL team ID (Risers). Other teams set their own ID |
 | `DCL_BASE_URL` | `https://dallascricket.org:3000` | DCL API base URL |
