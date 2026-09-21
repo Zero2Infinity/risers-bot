@@ -4,8 +4,8 @@
 //
 // MVP login flow (no QR rendering — pairing code instead):
 //
-//  1. Open/create the device store (SQLite, WA_STORE or ./wastore.db).
-//  2. Connect. If the store has no ID (first run), require WA_PHONE
+//  1. Open/create the device store (SQLite, RISERS_WA_STORE or ./wastore.db).
+//  2. Connect. If the store has no ID (first run), require RISERS_WA_PHONE
 //     (digits only, e.g. 15551234567) and call PairPhone; the returned
 //     8-char code is printed — enter it on the phone under Linked
 //     Devices → Link with phone number. Poll until logged in.
@@ -60,9 +60,10 @@ type Client struct {
 }
 
 // Connect opens the device store, connects, pairs on first run via
-// WA_PHONE, and registers the message handler. It returns once logged in.
+// RISERS_WA_PHONE, and registers the message handler. It returns once logged in.
+// Legacy WA_STORE / WA_PHONE are still honored when the RISERS_* name is unset.
 func Connect(ctx context.Context, bot *Bot) (*Client, error) {
-	storePath := strings.TrimSpace(envOr("WA_STORE", "./wastore.db"))
+	storePath := strings.TrimSpace(envOr("RISERS_WA_STORE", envOr("WA_STORE", "./wastore.db")))
 	container, err := sqlstore.New(ctx, "sqlite3", "file:"+storePath+"?_foreign_keys=1", walog.Noop)
 	if err != nil {
 		return nil, fmt.Errorf("wa: open store: %w", err)
@@ -79,9 +80,9 @@ func Connect(ctx context.Context, bot *Bot) (*Client, error) {
 		return nil, fmt.Errorf("wa: connect: %w", err)
 	}
 	if cli.Store.ID == nil {
-		phone := strings.TrimSpace(envOr("WA_PHONE", ""))
+		phone := strings.TrimSpace(envOr("RISERS_WA_PHONE", envOr("WA_PHONE", "")))
 		if phone == "" {
-			return nil, fmt.Errorf("wa: first run needs WA_PHONE (digits only, e.g. 15551234567) for pairing-code login")
+			return nil, fmt.Errorf("wa: first run needs RISERS_WA_PHONE (digits only, e.g. 15551234567) for pairing-code login")
 		}
 		// Display name must look like "Browser (OS)" — the server
 		// validates it and 400s anything else (e.g. a bot name).
