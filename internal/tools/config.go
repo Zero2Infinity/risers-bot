@@ -18,16 +18,25 @@ import (
 )
 
 // DefaultTeamID is Risers in the DCL API (see scripts/risers_schedule.json:
-// team2_id 88). Overridden by DCL_TEAM_ID so other teams can reuse the tools.
+// team2_id 88). Overridden by RISERS_TEAM_ID so other teams can reuse the tools.
 const DefaultTeamID = 88
 
-// DefaultBaseURL is the public DCL API. Overridden by DCL_BASE_URL.
+// DefaultBaseURL is the public DCL API. Overridden by RISERS_DCL_BASE_URL.
 const DefaultBaseURL = "https://dallascricket.org:3000"
 
-// Env var names. Keep these stable — README documents them.
+// Env var names. Canonical names carry the RISERS_ prefix so every knob
+// matches (RISERS_DB, RISERS_LOG_LEVEL, ...). Keep these stable — README
+// documents them.
 const (
-	EnvTeamID  = "DCL_TEAM_ID"
-	EnvBaseURL = "DCL_BASE_URL"
+	EnvTeamID  = "RISERS_TEAM_ID"
+	EnvBaseURL = "RISERS_DCL_BASE_URL"
+)
+
+// Legacy env var names, honored as a fallback when the canonical RISERS_*
+// name is unset, so existing setups keep working.
+const (
+	LegacyEnvTeamID  = "DCL_TEAM_ID"
+	LegacyEnvBaseURL = "DCL_BASE_URL"
 )
 
 // Config selects the team and API endpoint for all tools in this package.
@@ -38,11 +47,23 @@ type Config struct {
 	BaseURL string
 }
 
+// envFirst returns the first non-blank env value among keys, or "" when
+// none is set. Callers pass the canonical RISERS_* name first and the
+// legacy name second, so the new name wins and the old one still works.
+func envFirst(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // LoadConfig builds a Config from the environment with Risers defaults.
 func LoadConfig() Config {
 	team := DefaultTeamID
-	if v := os.Getenv(EnvTeamID); v != "" {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
+	if v := envFirst(EnvTeamID, LegacyEnvTeamID); v != "" {
+		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {
 			fmt.Printf("Unable override Team id: %s", v)
 		} else {
@@ -51,7 +72,7 @@ func LoadConfig() Config {
 	}
 
 	base := DefaultBaseURL
-	if v := strings.TrimSpace(os.Getenv(EnvBaseURL)); v != "" {
+	if v := envFirst(EnvBaseURL, LegacyEnvBaseURL); v != "" {
 		base = strings.TrimRight(v, "/")
 	}
 
