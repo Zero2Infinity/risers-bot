@@ -175,15 +175,15 @@ Contributions welcome — bug reports, new DCL tools, prompt tuning, docs.
 - Keep PRs small: one file, one concern, reviewable diff (see `AGENTS.md`)
 - Before pushing, run: `go vet ./...`, `gofmt -l .`, `go test ./...` (builds need `CGO_ENABLED=1`)
 
-## References
+## Appendix
+
+Docs:
 
 - Ollama Chat API — https://docs.ollama.com/api/chat
 - qwen3.5:9b — https://ollama.com/library/qwen3.5:9b
 - DCL API base — https://dallascricket.org:3000/api/*
 
-## Appendix — Acknowledgments
-
-This bot stands on the shoulders of open source. Thank you to:
+Thanks — this bot stands on open source:
 
 - [whatsmeow](https://github.com/tulir/whatsmeow) — the Go WhatsApp client that powers our transport: pairing-code login, event handling, and reply sending (signal-protocol encryption via `go.mau.fi/libsignal`, device store via `go.mau.fi/whatsmeow/store/sqlstore`).
 - [go-sqlite3](https://github.com/mattn/go-sqlite3) — CGO SQLite driver behind per-session chat persistence.
