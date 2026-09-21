@@ -61,9 +61,8 @@ type Client struct {
 
 // Connect opens the device store, connects, pairs on first run via
 // RISERS_WA_PHONE, and registers the message handler. It returns once logged in.
-// Legacy WA_STORE / WA_PHONE are still honored when the RISERS_* name is unset.
 func Connect(ctx context.Context, bot *Bot) (*Client, error) {
-	storePath := strings.TrimSpace(envOr("RISERS_WA_STORE", envOr("WA_STORE", "./wastore.db")))
+	storePath := strings.TrimSpace(envOr("RISERS_WA_STORE", "./wastore.db"))
 	container, err := sqlstore.New(ctx, "sqlite3", "file:"+storePath+"?_foreign_keys=1", walog.Noop)
 	if err != nil {
 		return nil, fmt.Errorf("wa: open store: %w", err)
@@ -80,7 +79,7 @@ func Connect(ctx context.Context, bot *Bot) (*Client, error) {
 		return nil, fmt.Errorf("wa: connect: %w", err)
 	}
 	if cli.Store.ID == nil {
-		phone := strings.TrimSpace(envOr("RISERS_WA_PHONE", envOr("WA_PHONE", "")))
+		phone := strings.TrimSpace(envOr("RISERS_WA_PHONE", ""))
 		if phone == "" {
 			return nil, fmt.Errorf("wa: first run needs RISERS_WA_PHONE (digits only, e.g. 15551234567) for pairing-code login")
 		}
