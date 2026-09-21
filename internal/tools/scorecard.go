@@ -321,12 +321,9 @@ func tagBowlingSides(slim *scorecardSummary) {
 // scorecard as a JSON string. An unscored match (empty score_details)
 // returns meta with no innings so the model can say "not played yet".
 func executeGetMatchScorecard(ctx context.Context, client *DCLClient, args map[string]any) (string, error) {
-	id, ambiguous, err := resolveMatchID(ctx, client, args["match_id"])
+	id, err := resolveMatchID(ctx, client, args["match_id"])
 	if err != nil {
 		return "", fmt.Errorf("get_match_scorecard: %w", err)
-	}
-	if ambiguous != "" {
-		return ambiguous, nil
 	}
 
 	var payload scorecardResponse
@@ -617,23 +614,21 @@ func playerNames(ctx context.Context, client *DCLClient, ids []int) (map[int]str
 
 // resolveMatchID turns the model's match_id arg into a match ID. Accepts a
 // number, the string "last" (case-insensitive) for the configured team's most
-// recent completed fixture, or an opponent team name ("Phoenix"). Returns the
-// ambiguous JSON payload (non-empty) when several teams match — the caller
-// hands it to the model so it can ask the user which team. Shared by
-// get_match_scorecard and summarize_match.
-func resolveMatchID(ctx context.Context, client *DCLClient, raw any) (id int, ambiguous string, err error) {
+// recent completed fixture, or an opponent team name ("Phoenix"). Returns
+// *agent.NeedsClarification (via resolveByOpponentName) when several teams
+// match — the caller propagates it so Loop.Run pauses for the human.
+// Shared by get_match_scorecard and summarize_match.
+func resolveMatchID(ctx context.Context, client *DCLClient, raw any) (int, error) {
 	if s, ok := raw.(string); ok && strings.EqualFold(strings.TrimSpace(s), "last") {
-		id, err := latestEndedFixtureID(ctx, client)
-		return id, "", err
+		return latestEndedFixtureID(ctx, client)
 	}
 	if s, ok := raw.(string); ok {
 		if id, err := toMatchID(s); err == nil {
-			return id, "", nil
+			return id, nil
 		}
 		return resolveByOpponentName(ctx, client, strings.TrimSpace(s))
 	}
-	id, err = toMatchID(raw)
-	return id, "", err
+	return toMatchID(raw)
 }
 
 // teamChoice and resolveByOpponentName live in team.go; resolveMatchID

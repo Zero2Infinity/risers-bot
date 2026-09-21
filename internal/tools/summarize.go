@@ -68,12 +68,9 @@ type matchInsights struct {
 // computes pundit insights. An unscored match returns meta with no innings
 // or insights.
 func executeSummarizeMatch(ctx context.Context, client *DCLClient, args map[string]any) (string, error) {
-	id, ambiguous, err := resolveMatchID(ctx, client, args["match_id"])
+	id, err := resolveMatchID(ctx, client, args["match_id"])
 	if err != nil {
 		return "", fmt.Errorf("summarize_match: %w", err)
-	}
-	if ambiguous != "" {
-		return ambiguous, nil
 	}
 
 	var payload scorecardResponse
