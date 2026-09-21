@@ -31,7 +31,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -41,13 +40,19 @@ import (
 	"risers-bot/internal/history"
 	"risers-bot/internal/llm"
 	"risers-bot/internal/llm/ollama"
+	"risers-bot/internal/log"
 	"risers-bot/internal/tools"
 	"risers-bot/internal/wa"
 )
 
 func main() {
+	// NOTE: stdlib "log" is intentionally NOT imported here — risers-bot/internal/log
+	// owns the process logger. -log defaults to $RISERS_LOG_LEVEL (via FromEnv),
+	// so the flag wins when present and the env covers flag-less (e.g. -wa) runs.
+	logLevel := flag.String("log", log.FromEnv(), "log level: info|debug")
 	waMode := flag.Bool("wa", false, "run as WhatsApp listener for !risers commands")
 	flag.Parse()
+	log.Setup(*logLevel)
 	var err error
 	if *waMode {
 		err = runWA(context.Background())
@@ -55,7 +60,8 @@ func main() {
 		err = run(context.Background(), flag.Args())
 	}
 	if err != nil {
-		log.Fatal(err)
+		log.L().Error("risers-bot: fatal", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -103,7 +109,7 @@ func runWA(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	log.Println("risers-bot: listening for !risers commands (Ctrl-C to stop)")
+	log.L().Info("risers-bot: listening for !risers commands (Ctrl-C to stop)")
 	client.Wait(ctx)
 	return nil
 }

@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"risers-bot/internal/llm"
+	"risers-bot/internal/log"
 )
 
 const (
@@ -216,6 +217,8 @@ func (c *Client) Chat(ctx context.Context, msgs []llm.ChatMessage, tools []llm.T
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	log.L().Debug("ollama: request", "model", c.model, "messages", len(wireMsgs), "tools", len(wireTools), "num_ctx", c.numCtx)
+	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ollama post: %w", err)
@@ -233,10 +236,13 @@ func (c *Client) Chat(ctx context.Context, msgs []llm.ChatMessage, tools []llm.T
 		return nil, fmt.Errorf("ollama decode: %w", err)
 	}
 
+	tcs := normalizeToolCalls(out.Message.ToolCalls)
+	log.L().Debug("ollama: response", "model", c.model, "elapsed_ms", time.Since(start).Milliseconds(),
+		"content_len", len(out.Message.Content), "thinking_len", len(out.Message.Thinking), "tool_calls", len(tcs))
 	return &llm.Result{
 		Content:   out.Message.Content,
 		Thinking:  out.Message.Thinking,
-		ToolCalls: normalizeToolCalls(out.Message.ToolCalls),
+		ToolCalls: tcs,
 	}, nil
 }
 
