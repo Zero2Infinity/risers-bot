@@ -56,6 +56,39 @@ func (f *flexFloat) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// flexInt decodes a JSON string or number as int. The DCL API mixes 7864,
+// "4056", and "" for bowler/batter ID fields across matches (empty string
+// means "no recorded ID" → 0, which callers treat as unknown).
+type flexInt int
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*f = 0
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(b, &n); err == nil {
+		*f = flexInt(n)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	*f = flexInt(n)
+	return nil
+}
+
 // ScorecardTool is the registry entry for get_match_scorecard. Register it
 // in cmd via reg.Register(ScorecardTool).
 var ScorecardTool = ToolDef{
@@ -184,16 +217,11 @@ type batterRow struct {
 	StrikeRate    flexFloat `json:"strikeRate"`
 	BattingStatus string    `json:"battingStatus"`
 	OutType       string    `json:"outType"`
-	// NOTE: match 5692 sends this as a JSON string (e.g. "4056", sometimes
-	// ""). Kept strict int for now — revisit with a lenient int-or-string
-	// decode if more matches fail the same way.
-	BowlerID int `json:"bowler"`
+	BowlerID      flexInt   `json:"bowler"`
 }
 
 type bowlerRow struct {
-	// NOTE: same as batterRow.BowlerID — match 5692 sends this as a string
-	// (e.g. "3108"). Kept strict int; revisit together if it spreads.
-	ID      int       `json:"id"`
+	ID      flexInt   `json:"id"`
 	Name    string    `json:"name"`
 	Over    float64   `json:"over"`
 	Maidens int       `json:"maiden"`
@@ -293,12 +321,9 @@ func tagBowlingSides(slim *scorecardSummary) {
 // scorecard as a JSON string. An unscored match (empty score_details)
 // returns meta with no innings so the model can say "not played yet".
 func executeGetMatchScorecard(ctx context.Context, client *DCLClient, args map[string]any) (string, error) {
-	id, ambiguous, err := resolveMatchID(ctx, client, args["match_id"])
+	id, err := resolveMatchID(ctx, client, args["match_id"])
 	if err != nil {
 		return "", fmt.Errorf("get_match_scorecard: %w", err)
-	}
-	if ambiguous != "" {
-		return ambiguous, nil
 	}
 
 	var payload scorecardResponse
@@ -390,7 +415,7 @@ func bowlerName(bowlers []bowlerRow, id int) string {
 		return ""
 	}
 	for _, b := range bowlers {
-		if b.ID == id {
+		if int(b.ID) == id {
 			return b.Name
 		}
 	}
@@ -589,23 +614,21 @@ func playerNames(ctx context.Context, client *DCLClient, ids []int) (map[int]str
 
 // resolveMatchID turns the model's match_id arg into a match ID. Accepts a
 // number, the string "last" (case-insensitive) for the configured team's most
-// recent completed fixture, or an opponent team name ("Phoenix"). Returns the
-// ambiguous JSON payload (non-empty) when several teams match — the caller
-// hands it to the model so it can ask the user which team. Shared by
-// get_match_scorecard and summarize_match.
-func resolveMatchID(ctx context.Context, client *DCLClient, raw any) (id int, ambiguous string, err error) {
+// recent completed fixture, or an opponent team name ("Phoenix"). Returns
+// *agent.NeedsClarification (via resolveByOpponentName) when several teams
+// match — the caller propagates it so Loop.Run pauses for the human.
+// Shared by get_match_scorecard and summarize_match.
+func resolveMatchID(ctx context.Context, client *DCLClient, raw any) (int, error) {
 	if s, ok := raw.(string); ok && strings.EqualFold(strings.TrimSpace(s), "last") {
-		id, err := latestEndedFixtureID(ctx, client)
-		return id, "", err
+		return latestEndedFixtureID(ctx, client)
 	}
 	if s, ok := raw.(string); ok {
 		if id, err := toMatchID(s); err == nil {
-			return id, "", nil
+			return id, nil
 		}
 		return resolveByOpponentName(ctx, client, strings.TrimSpace(s))
 	}
-	id, err = toMatchID(raw)
-	return id, "", err
+	return toMatchID(raw)
 }
 
 // teamChoice and resolveByOpponentName live in team.go; resolveMatchID

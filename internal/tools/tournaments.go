@@ -23,7 +23,7 @@ import (
 var TournamentTool = ToolDef{
 	Tool: llm.Tool{
 		Name:        "get_tournaments",
-		Description: "List all DCL tournaments. Returns slim rows: id, name, start/end dates, overs, published flag. Present them as a short list to the fan. Call this first when you need a tournament_id for schedule or standings.",
+		Description: "List all DCL tournaments. Returns id+name rows. Present them as a short list to the fan. Call this first when you need a tournament_id for schedule or standings. Never call it on the way to a match summary or scorecard — those resolve by team name or match id and need no tournament.",
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -32,16 +32,13 @@ var TournamentTool = ToolDef{
 	Execute: executeGetTournaments,
 }
 
-// tournamentSummary is the slim row the model sees. Full DCL rows carry
-// ~25 keys (fees, roster limits, points config); none of that helps answer
-// fan questions, so it stays out of the observation.
+// tournamentSummary is the slim row the model sees: id+name only. Full DCL
+// rows carry ~25 keys (fees, roster limits, dates, points config); none of
+// that helps answer fan questions, and the 20-row list at full width (~4.6K
+// chars) was starving generation room on multi-hop turns. Keep it lean.
 type tournamentSummary struct {
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	StartDate string `json:"start_date"`
-	EndDate   string `json:"end_date"`
-	Overs     string `json:"overs"`
-	Published int    `json:"published"`
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 // executeGetTournaments fetches ALL pages and returns slim rows as a JSON
@@ -68,12 +65,8 @@ func executeGetTournaments(ctx context.Context, client *DCLClient, args map[stri
 	slim := make([]tournamentSummary, 0, len(all))
 	for _, t := range all {
 		slim = append(slim, tournamentSummary{
-			ID:        t.ID,
-			Name:      t.Name,
-			StartDate: t.StartDate,
-			EndDate:   t.EndDate,
-			Overs:     t.Overs,
-			Published: t.IsPublished,
+			ID:   t.ID,
+			Name: t.Name,
 		})
 	}
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"risers-bot/internal/agent"
 	"risers-bot/internal/llm"
 )
 
@@ -18,7 +19,7 @@ import (
 var FindOpponentTool = ToolDef{
 	Tool: llm.Tool{
 		Name:        "find_opponent",
-		Description: "Find a DCL team by partial name (e.g. \"Royals\" matches \"Fort Worth Royals\"). Returns the team id and name from completed fixtures against the configured team — pass the returned match_id directly to summarize_match or get_match_scorecard, no other lookup needed. If several teams match, ask the user which one.",
+		Description: "Find a DCL team by partial name (e.g. \"Royals\" matches \"Fort Worth Royals\"). Returns the team id — only needed when another tool asks for a team_id (e.g. get_points_table). For match summaries or scorecards, skip this tool and pass the team name straight to summarize_match or get_match_scorecard, which resolve it. If several teams match, ask the user which one.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -33,8 +34,9 @@ var FindOpponentTool = ToolDef{
 }
 
 // executeFindOpponent searches completed fixtures for opponents matching the
-// query and returns found/ambiguous JSON. One team → its id plus latest
-// match; several → the list so the model can ask the user which one.
+// query. One team → its id plus latest match as JSON; several →
+// *agent.NeedsClarification with the "which team?" question so Loop.Run
+// pauses for the human.
 func executeFindOpponent(ctx context.Context, client *DCLClient, args map[string]any) (string, error) {
 	raw, ok := args["query"]
 	if !ok || raw == nil {
@@ -49,11 +51,13 @@ func executeFindOpponent(ctx context.Context, client *DCLClient, args map[string
 		return "", fmt.Errorf("find_opponent: %w", err)
 	}
 	if len(opps) == 1 {
+		// NOTE: no match_id here on purpose. The model substitutes wrong
+		// numbers between hops (5692→5954 twice); team names route
+		// deterministically through resolveMatchID, numbers do not.
 		out, err := json.Marshal(map[string]any{
 			"status":     "found",
 			"team_id":    opps[0].TeamID,
 			"name":       opps[0].TeamName,
-			"match_id":   opps[0].MatchID,
 			"last_match": opps[0].Date,
 		})
 		if err != nil {
@@ -61,15 +65,10 @@ func executeFindOpponent(ctx context.Context, client *DCLClient, args map[string
 		}
 		return string(out), nil
 	}
-	choices := make([]teamChoice, 0, len(opps))
-	for _, o := range opps {
-		choices = append(choices, teamChoice{ID: o.TeamID, Name: o.TeamName, LastMatch: o.Date})
-	}
-	out, err := json.Marshal(map[string]any{"status": "ambiguous", "query": strings.TrimSpace(s), "teams": choices})
-	if err != nil {
-		return "", fmt.Errorf("find_opponent marshal: %w", err)
-	}
-	return string(out), nil
+	// Several teams match — stop the loop and ask the human to pick one.
+	// The question is returned via NeedsClarification (not as a JSON
+	// observation) so Loop.Run pauses early instead of burning iterations.
+	return "", &agent.NeedsClarification{Question: ambiguityQuestion(strings.TrimSpace(s), opps)}
 }
 
 // oppMatch is one opponent team plus its latest completed fixture.
@@ -80,16 +79,25 @@ type oppMatch struct {
 	Date     string
 }
 
-// lookupOpponent lists opponent teams whose name contains query
-// (case-insensitive), each with its latest completed fixture (max ISO date).
-// Shared by the find_opponent tool and resolveByOpponentName.
-func lookupOpponent(ctx context.Context, client *DCLClient, query string) ([]oppMatch, error) {
+// Opponent aliases oppMatch for use outside this package (the match-call
+// reconciler). Fields stay exported: TeamID, TeamName, MatchID, Date.
+type Opponent = oppMatch
+
+// AllOpponents lists every opponent from completed fixtures, each with its
+// latest fixture (max ISO date). Own team excluded.
+func AllOpponents(ctx context.Context, client *DCLClient) ([]Opponent, error) {
+	return allOpponents(ctx, client)
+}
+
+// allOpponents scans fixtures once. lookupOpponent filters its result —
+// equivalent to filtering rows first, since matching depends only on the
+// team name, which is fixed per team.
+func allOpponents(ctx context.Context, client *DCLClient) ([]oppMatch, error) {
 	rows, err := fetchFixtures(ctx, client, client.TeamID())
 	if err != nil {
 		return nil, fmt.Errorf("opponent lookup: %w", err)
 	}
 	mine := client.TeamID()
-	q := strings.ToLower(query)
 	seen := map[int]*oppMatch{}
 	order := []int{}
 	for _, r := range rows {
@@ -100,7 +108,7 @@ func lookupOpponent(ctx context.Context, client *DCLClient, query string) ([]opp
 		if r.Team1ID == mine {
 			oppID, oppName = r.Team2ID, r.Team2Name
 		}
-		if !strings.Contains(strings.ToLower(oppName), q) {
+		if oppID == mine {
 			continue
 		}
 		c, ok := seen[oppID]
@@ -120,6 +128,24 @@ func lookupOpponent(ctx context.Context, client *DCLClient, query string) ([]opp
 	return out, nil
 }
 
+// lookupOpponent lists opponent teams whose name contains query
+// (case-insensitive), each with its latest completed fixture (max ISO date).
+// Shared by the find_opponent tool and resolveByOpponentName.
+func lookupOpponent(ctx context.Context, client *DCLClient, query string) ([]oppMatch, error) {
+	all, err := allOpponents(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	q := strings.ToLower(query)
+	out := make([]oppMatch, 0, len(all))
+	for _, o := range all {
+		if strings.Contains(strings.ToLower(o.TeamName), q) {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
 // teamChoice is one candidate in an ambiguous opponent-name lookup.
 type teamChoice struct {
 	ID        int    `json:"id"`
@@ -127,29 +153,33 @@ type teamChoice struct {
 	LastMatch string `json:"last_match"`
 }
 
+// ambiguityQuestion builds the human-facing "which team?" question for a
+// multi-match opponent lookup. Shared by executeFindOpponent and
+// resolveByOpponentName so both tools pause the loop with identical text.
+func ambiguityQuestion(query string, opps []oppMatch) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Multiple teams match %q — which one?", query)
+	for i, o := range opps {
+		fmt.Fprintf(&b, "\n%d. %s (last match: %s)", i+1, o.TeamName, o.Date)
+	}
+	return b.String()
+}
+
 // resolveByOpponentName finds the configured team's most recent completed
 // fixture against the opponent whose name contains query (case-insensitive).
-// One match → its ID. Several teams → ambiguous JSON listing each team's
-// latest match so the model can ask the user which team. None → error.
-func resolveByOpponentName(ctx context.Context, client *DCLClient, query string) (int, string, error) {
+// One match → its ID. Several teams → *agent.NeedsClarification carrying the
+// "which team?" question so Loop.Run pauses for the human. None → error.
+func resolveByOpponentName(ctx context.Context, client *DCLClient, query string) (int, error) {
 	opps, err := lookupOpponent(ctx, client, query)
 	if err != nil {
-		return 0, "", err
+		return 0, err
 	}
 	switch len(opps) {
 	case 0:
-		return 0, "", fmt.Errorf("no completed matches against %q", query)
+		return 0, fmt.Errorf("no completed matches against %q", query)
 	case 1:
-		return opps[0].MatchID, "", nil
+		return opps[0].MatchID, nil
 	default:
-		choices := make([]teamChoice, 0, len(opps))
-		for _, o := range opps {
-			choices = append(choices, teamChoice{ID: o.TeamID, Name: o.TeamName, LastMatch: o.Date})
-		}
-		blob, err := json.Marshal(map[string]any{"status": "ambiguous", "query": query, "teams": choices})
-		if err != nil {
-			return 0, "", fmt.Errorf("opponent lookup marshal: %w", err)
-		}
-		return 0, string(blob), nil
+		return 0, &agent.NeedsClarification{Question: ambiguityQuestion(query, opps)}
 	}
 }

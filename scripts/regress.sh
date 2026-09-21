@@ -25,6 +25,8 @@ PROMPTS=(
   "Summarize last game for me."
   "What is the team id for the Royals?"
   "Summarize the match against Daring team in DCL Fall 2026."
+  "Is there DCL Fall 2026 schedule uploaded?"
+  "Is there DCL Spring 2027 schedule uploaded?"
   # BLOCKED on 5692 string-typed IDs (see scorecard.go NOTEs) — enable after
   # the int-or-string revisit:
   # "Summarize the match against Royals team in DCL Fall 2026."
