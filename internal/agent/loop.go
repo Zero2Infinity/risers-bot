@@ -23,6 +23,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -64,6 +65,22 @@ const MaxIterations = 10
 // model should see next. Implementations are registered by the caller (e.g.
 // internal/wa or cmd/risers-bot) from a map[string]func(ctx, llm.ToolCall) (string, error).
 type ToolExecutor func(ctx context.Context, call llm.ToolCall) (string, error)
+
+// NeedsClarification signals that a tool found multiple options and needs
+// the human to pick one before proceeding. Question holds the exact text
+// sent to the user (tool-generated, listing the options). This is NOT a
+// real error — Loop.Run catches it, persists the question as an assistant
+// message, and returns it as the final reply so the loop stops early.
+// The user's answer starts a new Loop.Run in the same session, where the
+// persisted history gives the model full context to resume.
+//
+// Tools construct it (e.g. find_opponent on 2+ name matches); the loop
+// detects it with errors.As. Any wrapping with %w in between is fine.
+type NeedsClarification struct {
+	Question string
+}
+
+func (e *NeedsClarification) Error() string { return e.Question }
 
 // Loop holds the dependencies needed to run one ReAct turn. It owns none of them
 // (all injected) so it is simple to test: swap a stub store, a fake provider, and
@@ -113,13 +130,13 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 	if _, err := l.store.GetOrCreateSession(sessionID, "cli"); err != nil {
 		return "", fmt.Errorf("agent: get or create session: %w", err)
 	}
-	log.L().Info("agent: turn start", "session_id", sessionID, "user", log.Preview(userText, 80))
+	log.L().Info("agent: turn start", "session_id", sessionID, "user", userText, "max", MaxIterations)
 
 	window, err := l.history.ContextFor(ctx, sessionID)
 	if err != nil {
 		return "", fmt.Errorf("agent: history context: %w", err)
 	}
-	log.L().Debug("agent: history window", "session_id", sessionID, "messages", len(window))
+	log.L().Info("agent: history window", "session_id", sessionID, "max", MaxIterations, "messages", window)
 	msgs := []llm.ChatMessage{{Role: llm.RoleSystem, Content: SystemPrompt}}
 	for _, m := range window {
 		msgs = append(msgs, llm.ChatMessage{
@@ -136,15 +153,13 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 
 	// REACT loop
 	for iter := 1; iter <= MaxIterations; iter++ {
-		log.L().Info("agent: llm request", "session_id", sessionID, "iter", iter, "messages", len(msgs), "tools", len(tools))
+		log.L().Info("agent: llm request", "session_id", sessionID, "iter", iter, "max", MaxIterations, "messages", msgs, "tools", tools)
 		res, err := l.provider.Chat(ctx, msgs, tools)
 		if err != nil {
 			return "", fmt.Errorf("agent: provider chat iter %d: %w", iter, err)
 		}
-		log.L().Info("agent: llm response", "session_id", sessionID, "iter", iter,
-			"content_len", len(res.Content), "thinking_len", len(res.Thinking), "tool_calls", len(res.ToolCalls))
-		log.L().Debug("agent: thinking", "session_id", sessionID, "iter", iter, "preview", log.Preview(res.Thinking, 200))
-		log.L().Debug("agent: content", "session_id", sessionID, "iter", iter, "preview", log.Preview(res.Content, 200))
+		log.L().Info("agent: llm response", "session_id", sessionID, "iter", iter, "max", MaxIterations,
+			"content", res.Content, "thinking", res.Thinking, "tool_calls", res.ToolCalls)
 		if err := l.store.SaveMessage(sessionID, "assistant", res.Content, res.Thinking, ""); err != nil {
 			return "", fmt.Errorf("agent: save assistant iter %d: %w", iter, err)
 		}
@@ -152,21 +167,31 @@ func (l *Loop) Run(ctx context.Context, sessionID, userText string, tools []llm.
 		// Append assistant turn (Content only) so next Chat sees tool_calls context.
 		msgs = append(msgs, llm.ChatMessage{Role: llm.RoleAssistant, Content: res.Content})
 		if len(res.ToolCalls) == 0 {
-			log.L().Info("agent: turn complete", "session_id", sessionID, "iterations", iter, "content_len", len(res.Content))
+			log.L().Info("agent: turn complete", "session_id", sessionID, "iterations", iter, "max", MaxIterations, "content", res.Content)
 			return res.Content, nil
 		}
 		if l.executor == nil {
 			return "", fmt.Errorf("agent: tool calls but no executor")
 		}
 		for _, tc := range res.ToolCalls {
-			log.L().Info("agent: tool call", "session_id", sessionID, "iter", iter, "name", tc.Name)
-			log.L().Debug("agent: tool args", "session_id", sessionID, "iter", iter, "name", tc.Name, "args", tc.Arguments)
+			log.L().Info("agent: tool call", "session_id", sessionID, "iter", iter, "max", MaxIterations, "id", tc.ID, "name", tc.Name, "args", tc.Arguments)
 			obs, err := l.executor(ctx, tc)
 			if err != nil {
+				var nc *NeedsClarification
+				if errors.As(err, &nc) {
+					// Human pause: a tool needs the user to disambiguate.
+					// Persist the question as an assistant message so the
+					// next turn's history window shows question → answer.
+					// Return success — this is a reply, not a failure.
+					if saveErr := l.store.SaveMessage(sessionID, "assistant", nc.Question, "", ""); saveErr != nil {
+						return "", fmt.Errorf("agent: save clarification: %w", saveErr)
+					}
+					log.L().Info("agent: needs clarification", "session_id", sessionID, "question", nc.Question)
+					return nc.Question, nil
+				}
 				return "", fmt.Errorf("agent: tool %q: %w", tc.Name, err)
 			}
-			log.L().Info("agent: tool result", "session_id", sessionID, "iter", iter, "name", tc.Name, "obs_len", len(obs))
-			log.L().Debug("agent: tool observation", "session_id", sessionID, "iter", iter, "name", tc.Name, "preview", log.Preview(obs, 200))
+			log.L().Info("agent: tool result", "session_id", sessionID, "iter", iter, "max", MaxIterations, "name", tc.Name, "observation", obs)
 			if err := l.store.SaveMessage(sessionID, "tool", obs, "", tc.Name); err != nil {
 				return "", fmt.Errorf("agent: save tool %q: %w", tc.Name, err)
 			}
