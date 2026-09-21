@@ -1,48 +1,76 @@
 # Risers Bot
 
-WhatsApp cricket pundit bot for **Risers (DCL team 88)**.
+Your WhatsApp cricket pundit for **Risers (DCL team 88)** — local LLM grounded in real DCL data for accurate answers.
 
-Per-session user↔LLM chat with tool calls, persisted to SQLite, delivered over
-whatsmeow, backed by a local Ollama model. LLM tools fetch schedule, scorecards,
-standings, and player stats from dallascricket.org and hand the JSON to the model
-for answers.
+## Design
+
+```mermaid
+C4Component
+title Risers Bot - Components
+Person(fan, "Fan", "Asks via WhatsApp or CLI")
+Container_Boundary(bot, "risers-bot") {
+    Component(wa, "WA integration", "whatsmeow", "!risers gate, one session per sender")
+    Component(react, "ReAct agent", "Go", "Reason-Act-Observe loop, 10 steps max")
+    Component(llmc, "LLM", "Ollama client", "Chat plus thinking and tool calls")
+    Component(hist, "History", "Go", "Recent window plus old-chat summary")
+    Component(dbc, "DB", "SQLite", "Sessions and messages persisted")
+    Component(tools, "Tools", "Go", "9 DCL helpers for team 88")
+    Component(logc, "Log", "slog", "Shared stderr logger")
+}
+System_Ext(ollama, "Ollama", "Local qwen3.5:9b model")
+System_Ext(dcl, "DCL API", "Schedule, scorecards, standings, players")
+Rel(fan, wa, "asks")
+Rel(wa, react, "one turn per message")
+Rel(react, hist, "context window")
+Rel(hist, dbc, "reads and writes")
+Rel(react, llmc, "chat plus tools")
+Rel(llmc, ollama, "POST /api/chat")
+Rel(react, tools, "dispatches calls")
+Rel(tools, dcl, "HTTPS JSON")
+```
+
+Dependency order: `db ← history ← agent ← cmd/wa`, `agent → tools → DCL API`.
+
+## UserPrompt - try out!
+
+CLI: `risers-bot "<question>"` — WhatsApp: `!risers <question>`
+
+- `List all Risers games played in DCL Fall 2026`
+- `Is there DCL Fall 2026 schedule uploaded?`
+- `Summarize last game for me.`
+- `Summarize the match against Daring team in DCL Fall 2026.`
+- `Summarize match 5954: who played, toss, result, and top 3 batters. Keep it short.`
+- `Who scored the most runs in the last Risers game?`
+- `What is the team id for the Royals?`
+- `List Rahul Amratlal Patel runs scored per game in DCL Fall 2026`
+- `List Rahul Amratlal Patel runs scored per game in DCL Summer 2026. One line per game: runs off balls.`
+- `Is there DCL Spring 2027 schedule uploaded?`
+
+More in `scripts/regress.sh` — each run uses a fresh DB so tries never pollute each other.
 
 ## Features
 
-| Feature | Status | Files |
-|---|---|---|
-| `db` persistence — `Open`, `GetOrCreateSession`, `SaveMessage`, `ListMessages`, `Close` | Done | `internal/db/db.go`, `internal/db/schema.sql` |
-| `history` windowing — `KeepRecent`, `ApproxTokens`, `History.ContextFor` | Done | `internal/history/` |
-| `history` compaction — `Compactor` interface + `Summarize` | Done | `internal/history/compact.go` |
-| `llm` abstraction — `Provider`, `ChatMessage`/`Tool`/`ToolCall`/`Result` | Done | `internal/llm/provider.go` |
-| `ollama` client — non-streaming `POST /api/chat`, `num_ctx`, `thinking`, tool calls | Done | `internal/llm/ollama/client.go` |
-| `agent` ReAct loop — `SystemPrompt`, `MaxIterations`, `ToolExecutor`, `Loop.Run` | Done | `internal/agent/loop.go` |
-| `tools` DCL API — `DCLClient`, `Registry`, 9 tools (below) | Next | `internal/tools/*.go` (new) |
-| CLI wiring — `db` → `history` → `ollama` → `agent` + tools | Next | `cmd/risers-bot/main.go` |
-| Compactor adapter (`ollama` → `history`) | Next | `internal/agent/compactor.go` (new) |
-| whatsmeow transport | Parked | `internal/wa/*` (new) |
-| Streaming (`stream:true`) | Parked | `internal/llm/ollama/client.go` |
-| Vector/retrieval over past sessions | Parked | `internal/vector/*` (new) |
-
-### DCL tools (done, all slimmed for the 4K window)
+- [x] Answer Risers questions on WhatsApp via `!risers`
+- [x] Answer one-off questions from the command line
+- [x] Keep a separate chat history per user in SQLite
+- [x] Trim history to fit the model's context window
+- [x] Summarize very old chats instead of dropping them
+- [x] Chat via local Ollama model
+- [x] Run a ReAct loop that calls tools then answers
+- [x] Look up DCL data with tools:
+  - `get_tournaments` — list all tournaments
+  - `get_schedule` — fixtures and results for a team
+  - `get_match_scorecard` — full scorecard with every batter and bowler
+  - `get_points_table` — standings with wins, points, and net run rate
+  - `search_players` — find a player id by name
+  - `get_player_stats` — career batting and bowling per game
+  - `get_player_stats_filtered` — one player's games and totals for one tournament
+  - `summarize_match` — pundit summary from the Risers perspective
+  - `find_opponent` — find a team id by partial name
+- [ ] Auto-summarize old history on every turn
 
 Base URL: `https://dallascricket.org:3000` (public `GET`, no auth).
 Default team: Risers, `DCL_TEAM_ID=88`.
-
-| Tool | Endpoint | Notes |
-|---|---|---|
-| `get_tournaments` | `/api/gettournamentlist` | List tournaments |
-| `get_schedule` | `/api/schedules/{teamId}` | Team-scoped fixtures |
-| `get_match_scorecard` | `/api/getmatchdata/{match_id}` | Full scorecard, both innings |
-| `get_points_table` | `/api/tournamentpointstable/{tournament_id}` | Standings, W/L/NRR |
-| `search_players` | `/api/getplayerlistbysearch?q=` | Name → `user_id` |
-| `get_player_stats` | `/api/getplayerstatistics/{user_id}` | Career batting + bowling |
-| `get_player_stats_filtered` | `/api/getplayerstatistics/{user_id}` + `tournament_id` | Per-tournament stats with precomputed totals |
-| `summarize_match` | `/api/getmatchdata/{match_id}` | Risers pundit summary: complete card + insights |
-| `find_opponent` | team fixtures | Partial team name → team and match ids |
-
-Deferred: `get_live_scores` (`/api/getbannerscoreinfo`), response trimming for the
-4K context window, caching. Tools return full JSON for now.
 
 ## Repository structure
 
