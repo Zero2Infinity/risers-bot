@@ -73,7 +73,7 @@ More in `scripts/regress.sh` — each run uses a fresh DB so tries never pollute
 - [ ] Auto-summarize old history on every turn
 
 Base URL: `https://dallascricket.org:3000` (public `GET`, no auth).
-Default team: Risers, `RISERS_TEAM_ID=88` (legacy `DCL_TEAM_ID` still honored).
+Default team: Risers, `RISERS_TEAM_ID=88`.
 
 ## Repository structure
 
@@ -159,11 +159,11 @@ go test ./...
 |---|---|---|
 | `RISERS_DB` | `./risers.db` | SQLite database path |
 | `RISERS_LOG_LEVEL` | `info` | Log level: `info` or `debug` (also `-log` flag) |
-| `RISERS_MODEL` | `qwen3.5:9b` | Ollama model name (legacy `OLLAMA_MODEL` still honored) |
-| `RISERS_TEAM_ID` | `88` | DCL team ID (Risers). Other teams set their own ID (legacy `DCL_TEAM_ID` still honored) |
-| `RISERS_DCL_BASE_URL` | `https://dallascricket.org:3000` | DCL API base URL (legacy `DCL_BASE_URL` still honored) |
-| `RISERS_WA_STORE` | `./wastore.db` | WhatsApp device store path (legacy `WA_STORE` still honored) |
-| `RISERS_WA_PHONE` | — | Phone number for first-run pairing-code login (legacy `WA_PHONE` still honored) |
+| `OLLAMA_MODEL` | `qwen3.5:9b` | Ollama model name |
+| `RISERS_TEAM_ID` | `88` | DCL team ID (Risers). Other teams set their own ID |
+| `DCL_BASE_URL` | `https://dallascricket.org:3000` | DCL API base URL |
+| `RISERS_WA_STORE` | `./wastore.db` | WhatsApp device store path |
+| `RISERS_WA_PHONE` | — | Phone number for first-run pairing-code login |
 
 Runtime data (`*.db`, `/data/`) is git-ignored.
 
