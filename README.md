@@ -5,28 +5,31 @@ Your WhatsApp cricket pundit for **Risers (DCL team 88)** — local LLM grounded
 ## Design
 
 ```mermaid
-C4Component
-title Risers Bot - Components
-Person(fan, "Fan", "Asks via WhatsApp or CLI")
-Container_Boundary(bot, "risers-bot") {
-    Component(wa, "WA integration", "whatsmeow", "!risers gate, one session per sender")
-    Component(react, "ReAct agent", "Go", "Reason-Act-Observe loop, 10 steps max")
-    Component(llmc, "LLM", "Ollama client", "Chat plus thinking and tool calls")
-    Component(hist, "History", "Go", "Recent window plus old-chat summary")
-    Component(dbc, "DB", "SQLite", "Sessions and messages persisted")
-    Component(tools, "Tools", "Go", "9 DCL helpers for team 88")
-    Component(logc, "Log", "slog", "Shared stderr logger")
-}
-System_Ext(ollama, "Ollama", "Local qwen3.5:9b model")
-System_Ext(dcl, "DCL API", "Schedule, scorecards, standings, players")
-Rel(fan, wa, "asks")
-Rel(wa, react, "one turn per message")
-Rel(react, hist, "context window")
-Rel(hist, dbc, "reads and writes")
-Rel(react, llmc, "chat plus tools")
-Rel(llmc, ollama, "POST /api/chat")
-Rel(react, tools, "dispatches calls")
-Rel(tools, dcl, "HTTPS JSON")
+flowchart LR
+    fan(["Fan<br/>WhatsApp / CLI"]) --> wa
+    subgraph bot["risers-bot"]
+        direction TB
+        wa["WA<br/>!risers gate, session per sender"]
+        react["ReAct agent<br/>reason-act-observe, 10 steps max"]
+        llmc["LLM<br/>chat, thinking, tool calls"]
+        hist["History<br/>recent window + summary"]
+        dbc["DB<br/>SQLite sessions + messages"]
+        tools["Tools<br/>9 DCL helpers, team 88"]
+        logc["Log<br/>shared stderr logger"]
+        wa --> react
+        react --> hist
+        hist --> dbc
+        react --> llmc
+        react --> tools
+        react -.-> logc
+        llmc -.-> logc
+    end
+    llmc --> ollama[("Ollama<br/>local qwen3.5:9b")]
+    tools --> dcl[("DCL API<br/>schedule, scorecards, standings, players")]
+    classDef person fill:#08427b,color:#fff,stroke:#052e56;
+    classDef ext fill:#999,color:#fff,stroke:#6b6b6b;
+    class fan person;
+    class ollama,dcl ext;
 ```
 
 Dependency order: `db ← history ← agent ← cmd/wa`, `agent → tools → DCL API`.
