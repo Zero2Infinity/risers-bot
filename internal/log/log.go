@@ -23,6 +23,13 @@
 //     stats, per-iteration internals). Previews via Preview stay available
 //     for future trimming.
 //
+// FORMAT ($RISERS_LOG_FORMAT, default "text"):
+//   - text: slog TextHandler — scannable while tailing stderr during learning.
+//   - json: slog JSONHandler — one JSON object per line (JSONL), for jq:
+//     RISERS_LOG_FORMAT=json ./risers-bot "..." 2>&1 | jq -c '{msg, iter, session: .session_id}'
+//     Anything else fails open to text, same as level parsing. The format
+//     only changes rendering — every log.L() call site is untouched.
+//
 // WIRING (cmd/risers-bot/main.go, next step):
 //
 //	level := flag.String("log", log.FromEnv(), "log level: info|debug")
@@ -46,10 +53,18 @@ import (
 // long-running -wa mode).
 const LogLevel = "RISERS_LOG_LEVEL"
 
-// Setup installs the process-wide slog logger: a TextHandler on stderr at the
-// parsed level. Only "debug" (case-insensitive, whitespace-tolerant) enables
-// Debug output; anything else — including garbage — fails open to Info so a
-// typo can never flood WhatsApp-mode logs. Call once at startup, before any
+// LogFormat is the env var name ("RISERS_LOG_FORMAT") that selects the
+// output format: "text" (default, human-readable) or "json" (JSONL for jq).
+// It is separate from -log/RISERS_LOG_LEVEL, which selects verbosity —
+// level and format are orthogonal knobs.
+const LogFormat = "RISERS_LOG_FORMAT"
+
+// Setup installs the process-wide slog logger on stderr at the parsed
+// level (see LogLevel) with the format from $RISERS_LOG_FORMAT ("text" by
+// default, "json" for JSONL). Only "debug" (case-insensitive,
+// whitespace-tolerant) enables Debug output; anything else — including
+// garbage — fails open to Info so a typo can never flood WhatsApp-mode
+// logs. Unknown formats fail open to text. Call once at startup, before any
 // L() call site can emit. Stderr (not stdout) keeps the CLI reply on stdout
 // clean for piping.
 func Setup(level string) {
@@ -58,7 +73,11 @@ func Setup(level string) {
 		lvl = slog.LevelDebug
 	}
 
-	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})
+	opts := &slog.HandlerOptions{Level: lvl}
+	var h slog.Handler = slog.NewTextHandler(os.Stderr, opts)
+	if strings.ToLower(strings.TrimSpace(os.Getenv(LogFormat))) == "json" {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	}
 	slog.SetDefault(slog.New(h))
 }
 
