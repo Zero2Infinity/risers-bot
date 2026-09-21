@@ -15,18 +15,23 @@
 //     (zerolog is in go.mod only transitively via whatsmeow — not used.)
 //
 // LEVELS:
-//   - INFO  (default): session lifecycle, turn summary, tool call + result
-//     summary, errors. Safe to leave on in WhatsApp mode.
-//   - DEBUG: per-iteration detail, provider request/response stats, tool
-//     argument keys, observation previews (truncated via Preview).
+//   - INFO  (default): full learning payloads — turn input, history window,
+//     LLM request (messages+tools) and response (content+thinking+tool_calls),
+//     tool call args and full observations, each with iter/max. Verbose by
+//     design for local learning; expect large stderr in WhatsApp mode.
+//   - DEBUG: transport detail below the contract (ollama request/response
+//     stats, per-iteration internals). Previews via Preview stay available
+//     for future trimming.
 //
 // WIRING (cmd/risers-bot/main.go, next step):
 //
 //	level := flag.String("log", log.FromEnv(), "log level: info|debug")
 //	log.Setup(*level) // once, before buildStack()
 //
-// PRIVACY: never log full thinking or full observations at INFO; DEBUG
-// previews go through Preview (truncated) and stay off unless -log debug.
+// PRIVACY: INFO logs carry full thinking and full observations for learning.
+// This is verbose — do not leave on in shared/long-running WhatsApp mode
+// without accepting large stderr. Previews go through Preview (truncated)
+// when callers want the short form.
 package log
 
 import (
