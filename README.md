@@ -73,7 +73,7 @@ More in `scripts/regress.sh` — each run uses a fresh DB so tries never pollute
 - [ ] Auto-summarize old history on every turn
 
 Base URL: `https://dallascricket.org:3000` (public `GET`, no auth).
-Default team: Risers, `DCL_TEAM_ID=88`.
+Default team: Risers, `RISERS_TEAM_ID=88` (legacy `DCL_TEAM_ID` still honored).
 
 ## Repository structure
 
@@ -113,17 +113,34 @@ Dependency order: `db ← history ← agent ← cmd/wa`, `agent → tools → DC
 
 ## Setup
 
+Build:
+
 ```bash
 cd risers-bot
 go mod tidy
-CGO_ENABLED=1 go build ./...
-```
-
-Build the binary:
-
-```bash
 CGO_ENABLED=1 go build -o risers-bot ./cmd/risers-bot
 ```
+
+Run — ask one question (single turn, session `cli`):
+
+```bash
+./risers-bot "who won the last Risers game?"
+```
+
+Run — WhatsApp listener (answers `!risers <question>`, one session per sender):
+
+```bash
+./risers-bot -wa
+```
+
+> First `-wa` run needs `RISERS_WA_PHONE` (digits only, e.g. `15551234567`) for pairing-code login.
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `-wa` | off | Run as WhatsApp listener instead of one-shot CLI |
+| `-log` | `$RISERS_LOG_LEVEL`, else `info` | Log level: `info` or `debug` |
 
 Run checks:
 
@@ -140,13 +157,35 @@ go test ./...
 
 | Env var | Default | Description |
 |---|---|---|
-| `DCL_TEAM_ID` | `88` | DCL team ID (Risers). Other teams set their own ID |
-| `DCL_BASE_URL` | `https://dallascricket.org:3000` | DCL API base URL |
+| `RISERS_DB` | `./risers.db` | SQLite database path |
+| `RISERS_LOG_LEVEL` | `info` | Log level: `info` or `debug` (also `-log` flag) |
+| `RISERS_MODEL` | `qwen3.5:9b` | Ollama model name (legacy `OLLAMA_MODEL` still honored) |
+| `RISERS_TEAM_ID` | `88` | DCL team ID (Risers). Other teams set their own ID (legacy `DCL_TEAM_ID` still honored) |
+| `RISERS_DCL_BASE_URL` | `https://dallascricket.org:3000` | DCL API base URL (legacy `DCL_BASE_URL` still honored) |
+| `RISERS_WA_STORE` | `./wastore.db` | WhatsApp device store path (legacy `WA_STORE` still honored) |
+| `RISERS_WA_PHONE` | — | Phone number for first-run pairing-code login (legacy `WA_PHONE` still honored) |
 
 Runtime data (`*.db`, `/data/`) is git-ignored.
+
+## Contributing
+
+Contributions welcome — bug reports, new DCL tools, prompt tuning, docs.
+
+- Open an issue first: https://github.com/Zero2Infinity/risers-bot/issues
+- Keep PRs small: one file, one concern, reviewable diff (see `AGENTS.md`)
+- Before pushing, run: `go vet ./...`, `gofmt -l .`, `go test ./...` (builds need `CGO_ENABLED=1`)
 
 ## References
 
 - Ollama Chat API — https://docs.ollama.com/api/chat
 - qwen3.5:9b — https://ollama.com/library/qwen3.5:9b
 - DCL API base — https://dallascricket.org:3000/api/*
+
+## Appendix — Acknowledgments
+
+This bot stands on the shoulders of open source. Thank you to:
+
+- [whatsmeow](https://github.com/tulir/whatsmeow) — the Go WhatsApp client that powers our transport: pairing-code login, event handling, and reply sending (signal-protocol encryption via `go.mau.fi/libsignal`, device store via `go.mau.fi/whatsmeow/store/sqlstore`).
+- [go-sqlite3](https://github.com/mattn/go-sqlite3) — CGO SQLite driver behind per-session chat persistence.
+- [Ollama](https://github.com/ollama/ollama) — local LLM runtime serving `qwen3.5:9b` for private, accurate answers.
+- [Dallas Cricket League](https://dallascricket.org) — public API for schedules, scorecards, standings, and player stats.

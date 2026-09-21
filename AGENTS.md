@@ -4,7 +4,7 @@ WhatsApp cricket pundit bot for the **Risers** team (DCL team 88), in Go:
 per-session user↔LLM chat (with tool calls + reasoning) persisted to SQLite,
 delivered over whatsmeow, backed by a local Ollama qwen model.
 
-Default team is Risers team 88 (`DCL_TEAM_ID=88`); other teams override via env.
+Default team is Risers team 88 (`RISERS_TEAM_ID=88`); other teams override via env.
 
 ## 1. Agent role
 
@@ -50,7 +50,7 @@ risers-bot/
     ├── agent/           # REACT LOOP — orchestration (reason/act/observe), outside llm
     │   └── loop.go      # Run; MaxIterations; ToolExecutor
     ├── tools/           # DCL API TOOLS — LLM-callable fetch for team 88 (planned)
-    │   ├── config.go    # Config{TeamID, BaseURL} from env (DCL_TEAM_ID=88)
+    │   ├── config.go    # Config{TeamID, BaseURL} from env (RISERS_TEAM_ID=88)
     │   ├── client.go    # DCLClient — thin HTTP+JSON wrapper
     │   ├── registry.go  # Registry, ToolDef, BuildExecutor → agent.ToolExecutor
     │   ├── tournaments.go # get_tournaments

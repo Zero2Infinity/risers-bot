@@ -8,7 +8,7 @@
 #   ./scripts/regress.sh "Who won the last Risers game?"        # direct question
 #
 # Deps: go, sqlite3 CLI not required (bot manages its own DB).
-# Env:  RISERS_DB override respected; OLLAMA_MODEL override respected.
+# Env:  RISERS_DB override respected; RISERS_MODEL override respected.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
