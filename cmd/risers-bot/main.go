@@ -49,6 +49,7 @@ func main() {
 	// NOTE: stdlib "log" is intentionally NOT imported here — risers-bot/internal/log
 	// owns the process logger. -log defaults to $RISERS_LOG_LEVEL (via FromEnv),
 	// so the flag wins when present and the env covers flag-less (e.g. -wa) runs.
+	// Output format comes from $RISERS_LOG_FORMAT (text default, json for JSONL).
 	logLevel := flag.String("log", log.FromEnv(), "log level: info|debug")
 	waMode := flag.Bool("wa", false, "run as WhatsApp listener for !risers commands")
 	flag.Parse()
