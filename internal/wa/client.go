@@ -124,10 +124,12 @@ func (c *Client) handleEvent(evt any) {
 		return
 	}
 	log.L().Info("wa: recv", "sender", msg.Info.Sender, "chat", msg.Info.Chat, "text", log.Preview(text, 80))
-	// Fresh session per message: no cross-prompt history, so prior tool
-	// observations never eat the context window. Multi-tool chains still
-	// work — they happen inside one Loop.Run, not across sessions.
-	sessionID := fmt.Sprintf("wa-%d", time.Now().UnixNano())
+	// One stable session per sender so multi-turn flows survive: when a
+	// tool pauses the loop with NeedsClarification ("which team?"), the
+	// user's answer lands in the same session and the history window
+	// carries the full question → answer context. The keepRecent window
+	// bounds growth; multi-tool chains still run inside one Loop.Run.
+	sessionID := fmt.Sprintf("wa-%s", msg.Info.Sender.User)
 	reply, err := c.bot.HandleMessage(context.Background(), sessionID, text)
 	if err != nil {
 		log.L().Error("wa: turn failed", "sender", msg.Info.Sender, "err", err)
