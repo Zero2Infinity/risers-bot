@@ -67,8 +67,7 @@ func main() {
 
 // run executes one CLI turn. args is everything after the program name,
 // joined as the user message. sessionID "cli", DB path from RISERS_DB or
-// ./risers.db, model from RISERS_MODEL (legacy OLLAMA_MODEL still honored)
-// or "qwen3.5:9b".
+// ./risers.db, model from OLLAMA_MODEL or "qwen3.5:9b".
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: risers-bot \"<message>\"")
@@ -136,17 +135,6 @@ func (s *stack) loopFor(userText string) *agent.Loop {
 	return agent.New(s.store, s.hist, s.provider, exec)
 }
 
-// envFirst returns the first non-blank env value among keys, or "" when
-// none is set. Canonical RISERS_* name first, legacy name second.
-func envFirst(keys ...string) string {
-	for _, k := range keys {
-		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // buildStack wires persistence → history → model → agent → DCL tools.
 // Shared by one-shot CLI and WhatsApp modes; see the package doc.
 func buildStack() (*stack, error) {
@@ -163,7 +151,7 @@ func buildStack() (*stack, error) {
 
 	hist := history.New(store, nil, 20)
 
-	model := envFirst("RISERS_MODEL", "OLLAMA_MODEL")
+	model := strings.TrimSpace(os.Getenv("OLLAMA_MODEL"))
 	if model == "" {
 		model = "qwen3.5:9b"
 	}
